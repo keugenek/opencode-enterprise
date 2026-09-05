@@ -1,0 +1,413 @@
+From c2cf4d05bb22951968ee958e413d06c82f9bf4d2 Mon Sep 17 00:00:00 2001
+From: Codex <codex@users.noreply.github.com>
+Date: Sat, 5 Sep 2026 14:00:26 +0200
+Subject: [PATCH 2/4] fix(enterprise): pin inference transport and block policy
+ bypass paths
+
+---
+ packages/core/src/enterprise/policy.ts     |  14 ++-
+ packages/core/src/enterprise/transport.ts  |  44 ++++++++
+ packages/core/src/models-dev.ts            | 122 +--------------------
+ packages/core/src/permission.ts            |   2 +
+ packages/core/src/policy.ts                |   4 +-
+ packages/opencode/src/auth/index.ts        |   2 +
+ packages/opencode/src/config/config.ts     |  13 ++-
+ packages/opencode/src/config/tui.ts        |   9 +-
+ packages/opencode/src/permission/index.ts  |   2 +
+ packages/opencode/src/provider/provider.ts |  15 +++
+ 10 files changed, 96 insertions(+), 131 deletions(-)
+ create mode 100644 packages/core/src/enterprise/transport.ts
+
+diff --git a/packages/core/src/enterprise/policy.ts b/packages/core/src/enterprise/policy.ts
+index 302a830..6958e55 100644
+--- a/packages/core/src/enterprise/policy.ts
++++ b/packages/core/src/enterprise/policy.ts
+@@ -29,7 +29,9 @@ export function read() {
+   for (const name of ["/etc", "/etc/opencode", file]) {
+     const stat = lstatSync(name)
+     if (stat.isSymbolicLink() || stat.uid !== 0 || (stat.mode & 0o022) !== 0)
+-      throw new Error("Enterprise policy and its parents must be root-owned, not symlinks, and not group/world writable")
++      throw new Error(
++        "Enterprise policy and its parents must be root-owned, not symlinks, and not group/world writable",
++      )
+     if (name === file && (!stat.isFile() || stat.size > 16384)) throw new Error("Invalid enterprise policy file")
+   }
+   return decode(readFileSync(file, "utf8"))
+@@ -43,12 +45,14 @@ export function selection(provider: string, model: string) {
+ 
+ // These denies are a floor, including for subagents and saved approvals.
+ export function denied(tool: string) {
+-  return ["webfetch", "websearch", "codesearch", "external_directory", "lsp", "skill"].includes(tool) ||
+-    tool.startsWith("mcp_") || tool.startsWith("mcp.")
++  return (
++    ["webfetch", "websearch", "codesearch", "external_directory", "lsp", "skill"].includes(tool) ||
++    tool.startsWith("mcp_") ||
++    tool.startsWith("mcp.")
++  )
+ }
+ 
+-export function config() {
+-  const value = read()
++export function config(value = read()) {
+   const model = `${ProviderID}/${value.model}`
+   return {
+     model,
+diff --git a/packages/core/src/enterprise/transport.ts b/packages/core/src/enterprise/transport.ts
+new file mode 100644
+index 0000000..07dbb70
+--- /dev/null
++++ b/packages/core/src/enterprise/transport.ts
+@@ -0,0 +1,44 @@
++import { Enterprise } from "./policy"
++
++export function validate(policy: Enterprise.Document, input: string | URL | Request, init?: RequestInit) {
++  const url = new URL(input instanceof Request ? input.url : input)
++  if (url.href !== `${policy.baseURL}/chat/completions` || init?.method?.toUpperCase() !== "POST")
++    throw new Error("Enterprise transport only permits the fixed chat-completions endpoint")
++  if (typeof init.body !== "string") throw new Error("Enterprise transport requires a JSON request")
++  const body: unknown = JSON.parse(init.body)
++  if (!body || typeof body !== "object" || !("model" in body) || body.model !== policy.model)
++    throw new Error("Enterprise transport rejected a model override")
++  if (init.body.length > 16 * 1024 * 1024) throw new Error("Enterprise request exceeds 16 MiB")
++  // vLLM can fetch remote media itself; keep this initial coding profile text-only.
++  const inspect = (value: unknown): void => {
++    if (!value || typeof value !== "object") return
++    if (Array.isArray(value)) return value.forEach(inspect)
++    for (const [key, child] of Object.entries(value)) {
++      if (["image_url", "input_image", "video_url", "audio_url", "file_url"].includes(key))
++        throw new Error("Remote media is disabled in the enterprise coding profile")
++      inspect(child)
++    }
++  }
++  if ("messages" in body) inspect(body.messages)
++}
++
++export function create(policy: Enterprise.Document) {
++  const send = async (input: string | URL | Request, init?: RequestInit) => {
++    validate(policy, input, init)
++    // The gateway authenticates the workload (e.g. service-mesh mTLS). No personal/cloud credentials.
++    // Do not forward SDK/user cookies, authorization, proxy options, or caller TLS overrides.
++    const response = await fetch(input, {
++      method: "POST",
++      body: init?.body,
++      signal: init?.signal,
++      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
++      redirect: "error",
++      credentials: "omit",
++    })
++    if (response.status >= 300 && response.status < 400) throw new Error("Enterprise transport rejects redirects")
++    return response
++  }
++  return Object.assign(send, { preconnect: () => {} })
++}
++
++export * as EnterpriseTransport from "./transport"
+diff --git a/packages/core/src/models-dev.ts b/packages/core/src/models-dev.ts
+index e577935..41a8376 100644
+--- a/packages/core/src/models-dev.ts
++++ b/packages/core/src/models-dev.ts
+@@ -142,124 +142,10 @@ export interface Interface {
+ 
+ export class Service extends Context.Service<Service, Interface>()("@opencode/ModelsDev") {}
+ 
+-const layer = Layer.effect(
+-  Service,
+-  Effect.gen(function* () {
+-    const fs = yield* FSUtil.Service
+-    const events = yield* EventV2.Service
+-    const http = HttpClient.filterStatusOk(
+-      (yield* HttpClient.HttpClient).pipe(
+-        HttpClient.retryTransient({
+-          retryOn: "errors-and-responses",
+-          times: 2,
+-          schedule: Schedule.exponential(200).pipe(Schedule.jittered),
+-        }),
+-      ),
+-    )
+-
+-    const source = Flag.OPENCODE_MODELS_URL || "https://models.opencode.ai"
+-    const filepath = path.join(
+-      Global.Path.cache,
+-      source === "https://models.opencode.ai" ? "models.json" : `models-${Hash.fast(source)}.json`,
+-    )
+-    const ttl = Duration.minutes(5)
+-    const lockKey = `models-dev:${filepath}`
+-
+-    const fresh = Effect.fnUntraced(function* () {
+-      const stat = yield* fs.stat(filepath).pipe(Effect.catch(() => Effect.succeed(undefined)))
+-      if (!stat) return false
+-      const mtime = Option.getOrElse(stat.mtime, () => new Date(0)).getTime()
+-      return Date.now() - mtime < Duration.toMillis(ttl)
+-    })
+-
+-    const fetchApi = Effect.fn("ModelsDev.fetchApi")(function* () {
+-      return yield* HttpClientRequest.get(`${source}/api.json`).pipe(
+-        HttpClientRequest.setHeader("User-Agent", USER_AGENT),
+-        http.execute,
+-        Effect.flatMap((res) => res.text),
+-        Effect.timeout("10 seconds"),
+-      )
+-    })
+-
+-    const loadFromDisk = fs.readJson(Flag.OPENCODE_MODELS_PATH ?? filepath).pipe(
+-      Effect.catch((error) => {
+-        if (
+-          Flag.OPENCODE_MODELS_PATH === undefined &&
+-          error._tag === "FileSystemError" &&
+-          error.method === "readJson"
+-        ) {
+-          return fs.remove(filepath, { force: true }).pipe(Effect.ignore, Effect.as(undefined))
+-        }
+-        return Effect.succeed(undefined)
+-      }),
+-      Effect.map((v) => v as Record<string, Provider> | undefined),
+-    )
+-
+-    const loadSnapshot = Effect.sync(() =>
+-      typeof OPENCODE_MODELS_DEV === "undefined" ? undefined : OPENCODE_MODELS_DEV,
+-    )
+-
+-    const fetchAndWrite = Effect.fn("ModelsDev.fetchAndWrite")(function* () {
+-      const text = yield* fetchApi()
+-      const tempfile = `${filepath}.${process.pid}.${Date.now()}.tmp`
+-      yield* fs.writeWithDirs(tempfile, text).pipe(
+-        Effect.andThen(fs.rename(tempfile, filepath)),
+-        Effect.catch((error) =>
+-          Effect.gen(function* () {
+-            yield* fs.remove(tempfile, { force: true }).pipe(Effect.ignore)
+-            return yield* Effect.fail(error)
+-          }),
+-        ),
+-      )
+-      return text
+-    })
+-
+-    const populate = Effect.gen(function* () {
+-      const fromDisk = yield* loadFromDisk
+-      if (fromDisk) return fromDisk
+-      const snapshot = yield* loadSnapshot
+-      if (snapshot) return snapshot
+-      if (Flag.OPENCODE_DISABLE_MODELS_FETCH) return {}
+-      // Flock is cross-process: concurrent opencode CLIs can race on this cache file.
+-      const text = yield* Effect.scoped(
+-        Effect.gen(function* () {
+-          yield* Flock.effect(lockKey)
+-          return yield* fetchAndWrite()
+-        }),
+-      )
+-      return JSON.parse(text) as Record<string, Provider>
+-    }).pipe(Effect.withSpan("ModelsDev.populate"), Effect.orDie)
+-
+-    const [cachedGet, invalidate] = yield* Effect.cachedInvalidateWithTTL(populate, Duration.infinity)
+-
+-    const get = (): Effect.Effect<Record<string, Provider>> => cachedGet
+-
+-    const refresh = Effect.fn("ModelsDev.refresh")(function* (force = false) {
+-      if (!force && (yield* fresh())) return
+-      yield* Effect.scoped(
+-        Effect.gen(function* () {
+-          yield* Flock.effect(lockKey)
+-          // Re-check under the lock: another process may have refreshed between
+-          // our outer check and lock acquisition.
+-          if (!force && (yield* fresh())) return
+-          yield* fetchAndWrite()
+-          yield* invalidate
+-          yield* events.publish(Event.Refreshed, {})
+-        }),
+-      ).pipe(
+-        Effect.tapCause((cause) => Effect.logError("Failed to fetch models.dev", { cause: cause })),
+-        Effect.ignore,
+-      )
+-    })
+-
+-    if (!Flag.OPENCODE_DISABLE_MODELS_FETCH && !process.argv.includes("--get-yargs-completions")) {
+-      // Schedule.spaced runs the effect once, then waits between completions.
+-      yield* Effect.forkScoped(refresh().pipe(Effect.repeat(Schedule.spaced("60 minutes")), Effect.ignore))
+-    }
+-
+-    return Service.of({ get, refresh })
+-  }),
+-)
++const layer = Layer.succeed(Service, Service.of({
++  get: () => Effect.succeed({}),
++  refresh: () => Effect.void,
++}))
+ 
+ export const node = makeGlobalNode({ service: Service, layer: layer, deps: [FSUtil.node, EventV2.node, httpClient] })
+ 
+diff --git a/packages/core/src/permission.ts b/packages/core/src/permission.ts
+index 3f28632..a05c140 100644
+--- a/packages/core/src/permission.ts
++++ b/packages/core/src/permission.ts
+@@ -1,3 +1,4 @@
++import { Enterprise } from "./enterprise/policy"
+ export * as PermissionV2 from "./permission"
+ 
+ import { makeLocationNode } from "./effect/app-node"
+@@ -74,6 +75,7 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Per
+ export type Error = BlockedError | CorrectedError
+ 
+ export function evaluate(action: string, resource: string, ...rulesets: Permission.Ruleset[]): Permission.Rule {
++  if (Enterprise.enabled && Enterprise.denied(action)) return { action, resource, effect: "deny" }
+   return (
+     rulesets
+       .flat()
+diff --git a/packages/core/src/policy.ts b/packages/core/src/policy.ts
+index a2adebb..ccdf981 100644
+--- a/packages/core/src/policy.ts
++++ b/packages/core/src/policy.ts
+@@ -1,3 +1,4 @@
++import { Enterprise } from "./enterprise/policy"
+ export * as Policy from "./policy"
+ 
+ import { makeLocationNode } from "./effect/app-node"
+@@ -32,8 +33,9 @@ const layer = Layer.effect(
+       load: EffectRuntime.fn("Policy.load")(function* (input) {
+         statements = input
+       }),
+-      hasStatements: () => statements.length > 0,
++      hasStatements: () => Enterprise.enabled || statements.length > 0,
+       evaluate: EffectRuntime.fn("Policy.evaluate")(function* (action, resource, fallback) {
++        if (Enterprise.enabled && action === "provider.use") return "deny" as const
+         return (
+           statements.findLast(
+             (statement) => Wildcard.match(action, statement.action) && Wildcard.match(resource, statement.resource),
+diff --git a/packages/opencode/src/auth/index.ts b/packages/opencode/src/auth/index.ts
+index a133e88..f522564 100644
+--- a/packages/opencode/src/auth/index.ts
++++ b/packages/opencode/src/auth/index.ts
+@@ -1,3 +1,4 @@
++import { Enterprise } from "@opencode-ai/core/enterprise/policy"
+ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+ import path from "path"
+ import { Effect, Layer, Record, Result, Schema, Context } from "effect"
+@@ -71,6 +72,7 @@ const layer = Layer.effect(
+     })
+ 
+     const set = Effect.fn("Auth.set")(function* (key: string, info: Info) {
++      if (Enterprise.enabled) throw new Error("Personal provider authentication is disabled")
+       const norm = key.replace(/\/+$/, "")
+       const data = yield* all()
+       if (norm !== key) delete data[key]
+diff --git a/packages/opencode/src/config/config.ts b/packages/opencode/src/config/config.ts
+index 8dde17a..4949156 100644
+--- a/packages/opencode/src/config/config.ts
++++ b/packages/opencode/src/config/config.ts
+@@ -329,10 +329,13 @@ const layer = Layer.effect(
+ 
+     const loadInstanceState = Effect.fn("Config.loadInstanceState")(
+       function* (ctx: InstanceContext) {
+-        if (Enterprise.enabled) return {
+-          config: Enterprise.config(), directories: [], deps: [],
+-          consoleState: { consoleManagedProviders: [], activeOrgName: undefined, switchableOrgCount: 0 },
+-        }
++        if (Enterprise.enabled)
++          return {
++            config: Enterprise.config(),
++            directories: [],
++            deps: [],
++            consoleState: { consoleManagedProviders: [], activeOrgName: undefined, switchableOrgCount: 0 },
++          }
+         const auth = yield* authSvc.all().pipe(Effect.orDie)
+ 
+         let result: Info = {}
+@@ -642,6 +645,7 @@ const layer = Layer.effect(
+     })
+ 
+     const update = Effect.fn("Config.update")(function* (config: Info) {
++      if (Enterprise.enabled) throw new Error("Enterprise configuration is managed by the platform team")
+       const dir = yield* InstanceState.directory
+       const file = path.join(dir, "config.json")
+       const existing = yield* loadFile(file)
+@@ -660,6 +664,7 @@ const layer = Layer.effect(
+     })
+ 
+     const updateGlobal = Effect.fn("Config.updateGlobal")(function* (config: Info) {
++      if (Enterprise.enabled) throw new Error("Enterprise configuration is managed by the platform team")
+       const file = globalConfigFile()
+       const before = (yield* readConfigFile(file)) ?? "{}"
+       const patch = writableGlobal(config)
+diff --git a/packages/opencode/src/config/tui.ts b/packages/opencode/src/config/tui.ts
+index 8093b53..4b4e15a 100644
+--- a/packages/opencode/src/config/tui.ts
++++ b/packages/opencode/src/config/tui.ts
+@@ -82,9 +82,12 @@ function dropUnknownKeybinds(input: Record<string, unknown>) {
+ }
+ 
+ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: string }) {
+-  if (Enterprise.enabled) return {
+-    config: TuiConfig.resolve({}, { terminalSuspend: false }), pluginOrigins: [], dirs: [],
+-  }
++  if (Enterprise.enabled)
++    return {
++      config: TuiConfig.resolve({}, { terminalSuspend: false }),
++      pluginOrigins: [],
++      dirs: [],
++    }
+   const afs = yield* FSUtil.Service
+   let appliedOrder = 0
+ 
+diff --git a/packages/opencode/src/permission/index.ts b/packages/opencode/src/permission/index.ts
+index 2e27ff2..1591e0b 100644
+--- a/packages/opencode/src/permission/index.ts
++++ b/packages/opencode/src/permission/index.ts
+@@ -1,3 +1,4 @@
++import { Enterprise } from "@opencode-ai/core/enterprise/policy"
+ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+ import { ConfigPermissionV1 } from "@opencode-ai/core/v1/config/permission"
+ import { InstanceState } from "@/effect/instance-state"
+@@ -26,6 +27,7 @@ interface State {
+ }
+ 
+ export function evaluate(permission: string, pattern: string, ...rulesets: PermissionV1.Ruleset[]): PermissionV1.Rule {
++  if (Enterprise.enabled && Enterprise.denied(permission)) return { permission, pattern, action: "deny" }
+   return (
+     rulesets
+       .flat()
+diff --git a/packages/opencode/src/provider/provider.ts b/packages/opencode/src/provider/provider.ts
+index 72d5a7a..0248834 100644
+--- a/packages/opencode/src/provider/provider.ts
++++ b/packages/opencode/src/provider/provider.ts
+@@ -1,3 +1,5 @@
++import { Enterprise } from "@opencode-ai/core/enterprise/policy"
++import { EnterpriseTransport } from "@opencode-ai/core/enterprise/transport"
+ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+ import os from "os"
+ import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
+@@ -1728,6 +1730,17 @@ const layer = Layer.effect(
+     const list = Effect.fn("Provider.list")(() => InstanceState.use(state, (s) => s.providers))
+ 
+     async function resolveSDK(model: Model, s: State, envs: Record<string, string | undefined>) {
++      if (Enterprise.enabled) {
++        const policy = Enterprise.selection(model.providerID, model.id)
++        if (model.api.id !== policy.model || model.api.npm !== "@ai-sdk/openai-compatible")
++          throw new Error("Enterprise SDK route override rejected")
++        const { createOpenAICompatible } = await import("@ai-sdk/openai-compatible")
++        return createOpenAICompatible({
++          name: Enterprise.ProviderID,
++          baseURL: policy.baseURL,
++          fetch: EnterpriseTransport.create(policy),
++        })
++      }
+       try {
+         const provider = s.providers[model.providerID]
+         const options = { ...provider.options }
+@@ -1866,6 +1879,7 @@ const layer = Layer.effect(
+     )
+ 
+     const getModel = Effect.fn("Provider.getModel")(function* (providerID: ProviderV2.ID, modelID: ModelV2.ID) {
++      if (Enterprise.enabled) Enterprise.selection(providerID, modelID)
+       const s = yield* InstanceState.get(state)
+       const provider = s.providers[providerID]
+       if (!provider) {
+@@ -1890,6 +1904,7 @@ const layer = Layer.effect(
+     })
+ 
+     const getLanguage = Effect.fn("Provider.getLanguage")(function* (model: Model) {
++      if (Enterprise.enabled) Enterprise.selection(model.providerID, model.id)
+       const s = yield* InstanceState.get(state)
+       const envs = yield* env.all()
+       const key = `${model.providerID}/${model.id}`
+-- 
+2.51.1
+

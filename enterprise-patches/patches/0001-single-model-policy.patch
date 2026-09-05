@@ -1,0 +1,197 @@
+From 64bc5f6c786e35fd96648cb0414b6b5a8d1162b3 Mon Sep 17 00:00:00 2001
+From: Codex <codex@users.noreply.github.com>
+Date: Sat, 5 Sep 2026 13:45:56 +0200
+Subject: [PATCH 1/4] feat(enterprise): enforce root-owned single-model
+ configuration
+
+---
+ packages/core/src/enterprise/policy.ts  | 96 +++++++++++++++++++++++++
+ packages/opencode/src/config/config.ts  |  6 ++
+ packages/opencode/src/config/managed.ts |  2 +-
+ packages/opencode/src/config/tui.ts     |  4 ++
+ packages/opencode/src/plugin/index.ts   |  2 +
+ 5 files changed, 109 insertions(+), 1 deletion(-)
+ create mode 100644 packages/core/src/enterprise/policy.ts
+
+diff --git a/packages/core/src/enterprise/policy.ts b/packages/core/src/enterprise/policy.ts
+new file mode 100644
+index 0000000..302a830
+--- /dev/null
++++ b/packages/core/src/enterprise/policy.ts
+@@ -0,0 +1,96 @@
++import { lstatSync, readFileSync } from "node:fs"
++import { Schema } from "effect"
++
++// This patch series is a Linux CLI distribution, not a user-switchable mode.
++export const enabled: boolean = true
++export const file = "/etc/opencode/enterprise.json"
++export const ProviderID = "enterprise"
++const Document = Schema.Struct({
++  baseURL: Schema.String,
++  model: Schema.String,
++  context: Schema.Int,
++  output: Schema.Int,
++})
++export type Document = typeof Document.Type
++
++export function decode(text: string) {
++  const value = Schema.decodeUnknownSync(Schema.fromJsonString(Document))(text)
++  const url = new URL(value.baseURL)
++  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || url.pathname !== "/v1")
++    throw new Error("Enterprise endpoint must be HTTPS with an exact /v1 path and no credentials or query")
++  if (!/^[a-zA-Z0-9._/-]{1,160}$/.test(value.model)) throw new Error("Invalid enterprise model ID")
++  if (value.context < 4096 || value.output < 1 || value.output > value.context || value.output > 32768)
++    throw new Error("Invalid enterprise token limits")
++  return value
++}
++
++export function read() {
++  if (process.platform !== "linux") throw new Error("Enterprise distribution requires the managed Linux runtime")
++  for (const name of ["/etc", "/etc/opencode", file]) {
++    const stat = lstatSync(name)
++    if (stat.isSymbolicLink() || stat.uid !== 0 || (stat.mode & 0o022) !== 0)
++      throw new Error("Enterprise policy and its parents must be root-owned, not symlinks, and not group/world writable")
++    if (name === file && (!stat.isFile() || stat.size > 16384)) throw new Error("Invalid enterprise policy file")
++  }
++  return decode(readFileSync(file, "utf8"))
++}
++
++export function selection(provider: string, model: string) {
++  const value = read()
++  if (provider !== ProviderID || model !== value.model) throw new Error("Model blocked by enterprise policy")
++  return value
++}
++
++// These denies are a floor, including for subagents and saved approvals.
++export function denied(tool: string) {
++  return ["webfetch", "websearch", "codesearch", "external_directory", "lsp", "skill"].includes(tool) ||
++    tool.startsWith("mcp_") || tool.startsWith("mcp.")
++}
++
++export function config() {
++  const value = read()
++  const model = `${ProviderID}/${value.model}`
++  return {
++    model,
++    small_model: model,
++    enabled_providers: [ProviderID],
++    provider: {
++      [ProviderID]: {
++        name: "Enterprise inference",
++        npm: "@ai-sdk/openai-compatible",
++        options: { baseURL: value.baseURL, apiKey: "gateway-managed" },
++        models: {
++          [value.model]: {
++            name: value.model,
++            tool_call: true,
++            limit: { context: value.context, output: value.output },
++          },
++        },
++      },
++    },
++    share: "disabled" as const,
++    autoupdate: false as const,
++    plugin: [],
++    mcp: {},
++    lsp: false as const,
++    formatter: false as const,
++    skills: { paths: [], urls: [] },
++    permission: {
++      "*": "ask" as const,
++      read: "allow" as const,
++      glob: "allow" as const,
++      grep: "allow" as const,
++      edit: "ask" as const,
++      bash: "ask" as const,
++      external_directory: "deny" as const,
++      webfetch: "deny" as const,
++      websearch: "deny" as const,
++      codesearch: "deny" as const,
++      lsp: "deny" as const,
++      skill: "deny" as const,
++    },
++    experimental: { openTelemetry: false },
++  }
++}
++
++export * as Enterprise from "./policy"
+diff --git a/packages/opencode/src/config/config.ts b/packages/opencode/src/config/config.ts
+index 9e10b67..8dde17a 100644
+--- a/packages/opencode/src/config/config.ts
++++ b/packages/opencode/src/config/config.ts
+@@ -1,3 +1,4 @@
++import { Enterprise } from "@opencode-ai/core/enterprise/policy"
+ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+ import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
+ import { serviceUse } from "@opencode-ai/core/effect/service-use"
+@@ -258,6 +259,7 @@ const layer = Layer.effect(
+     })
+ 
+     const loadGlobal = Effect.fnUntraced(function* (env?: Record<string, string>) {
++      if (Enterprise.enabled) return Enterprise.config()
+       let result: Info = {}
+       // Seed the default global config with the schema for editor completion, but avoid writing when the user
+       // explicitly routes config through env-provided paths or content.
+@@ -327,6 +329,10 @@ const layer = Layer.effect(
+ 
+     const loadInstanceState = Effect.fn("Config.loadInstanceState")(
+       function* (ctx: InstanceContext) {
++        if (Enterprise.enabled) return {
++          config: Enterprise.config(), directories: [], deps: [],
++          consoleState: { consoleManagedProviders: [], activeOrgName: undefined, switchableOrgCount: 0 },
++        }
+         const auth = yield* authSvc.all().pipe(Effect.orDie)
+ 
+         let result: Info = {}
+diff --git a/packages/opencode/src/config/managed.ts b/packages/opencode/src/config/managed.ts
+index 877d30a..41f5626 100644
+--- a/packages/opencode/src/config/managed.ts
++++ b/packages/opencode/src/config/managed.ts
+@@ -29,7 +29,7 @@ function systemManagedConfigDir(): string {
+ }
+ 
+ export function managedConfigDir() {
+-  return process.env.OPENCODE_TEST_MANAGED_CONFIG_DIR || systemManagedConfigDir()
++  return systemManagedConfigDir()
+ }
+ 
+ export function parseManagedPlist(json: string): string {
+diff --git a/packages/opencode/src/config/tui.ts b/packages/opencode/src/config/tui.ts
+index 8f50375..8093b53 100644
+--- a/packages/opencode/src/config/tui.ts
++++ b/packages/opencode/src/config/tui.ts
+@@ -1,3 +1,4 @@
++import { Enterprise } from "@opencode-ai/core/enterprise/policy"
+ export * as TuiConfig from "./tui"
+ 
+ import path from "path"
+@@ -81,6 +82,9 @@ function dropUnknownKeybinds(input: Record<string, unknown>) {
+ }
+ 
+ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: string }) {
++  if (Enterprise.enabled) return {
++    config: TuiConfig.resolve({}, { terminalSuspend: false }), pluginOrigins: [], dirs: [],
++  }
+   const afs = yield* FSUtil.Service
+   let appliedOrder = 0
+ 
+diff --git a/packages/opencode/src/plugin/index.ts b/packages/opencode/src/plugin/index.ts
+index 6f05329..e2c95c1 100644
+--- a/packages/opencode/src/plugin/index.ts
++++ b/packages/opencode/src/plugin/index.ts
+@@ -1,3 +1,4 @@
++import { Enterprise } from "@opencode-ai/core/enterprise/policy"
+ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+ import type {
+   Hooks,
+@@ -133,6 +134,7 @@ const layer = Layer.effect(
+ 
+     const state = yield* InstanceState.make<State>(
+       Effect.fn("Plugin.state")(function* (ctx) {
++        if (Enterprise.enabled) return { hooks: [] }
+         const hooks: Hooks[] = []
+         const bridge = yield* EffectBridge.make()
+ 
+-- 
+2.51.1
+

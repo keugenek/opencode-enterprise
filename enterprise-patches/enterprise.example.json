@@ -1,0 +1,6 @@
+{
+  "baseURL": "https://inference.internal/v1",
+  "model": "enterprise-coder",
+  "context": 32768,
+  "output": 8192
+}

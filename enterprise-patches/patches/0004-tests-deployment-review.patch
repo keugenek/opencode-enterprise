@@ -1,0 +1,593 @@
+From 0b5eadcae1be629078d3223c7675c8f7b1f8e6e8 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Sat, 5 Sep 2026 14:10:04 +0200
+Subject: [PATCH 4/4] test(enterprise): add guardrail checks and deployment
+ review
+
+---
+ enterprise/ACCEPTANCE.md                      | 16 ++++
+ enterprise/Dockerfile                         | 24 +++++
+ enterprise/GATEWAY-CONTRACT.md                | 16 ++++
+ enterprise/HARNESS-COMPARISON.md              | 77 ++++++++++++++++
+ enterprise/README.md                          | 75 +++++++++++++++
+ enterprise/SECURITY-REVIEW.md                 | 73 +++++++++++++++
+ enterprise/enterprise.example.json            |  6 ++
+ enterprise/runtime.example.yaml               | 91 +++++++++++++++++++
+ .../core/test/effect/observability.test.ts    | 33 +------
+ packages/core/test/enterprise/policy.test.ts  | 86 ++++++++++++++++++
+ 10 files changed, 467 insertions(+), 30 deletions(-)
+ create mode 100644 enterprise/ACCEPTANCE.md
+ create mode 100644 enterprise/Dockerfile
+ create mode 100644 enterprise/GATEWAY-CONTRACT.md
+ create mode 100644 enterprise/HARNESS-COMPARISON.md
+ create mode 100644 enterprise/README.md
+ create mode 100644 enterprise/SECURITY-REVIEW.md
+ create mode 100644 enterprise/enterprise.example.json
+ create mode 100644 enterprise/runtime.example.yaml
+ create mode 100644 packages/core/test/enterprise/policy.test.ts
+
+diff --git a/enterprise/ACCEPTANCE.md b/enterprise/ACCEPTANCE.md
+new file mode 100644
+index 0000000..2eba666
+--- /dev/null
++++ b/enterprise/ACCEPTANCE.md
+@@ -0,0 +1,16 @@
++# Deployment acceptance gates
++
++Run in an isolated test namespace using the exact candidate image, internal CA and gateway. Retain network-flow logs. These are release gates, not checks claimed to have run in this development environment.
++
++1. Valid workload: one fixed model listed, normal chat, streamed tool call, approved edit, test command, cancellation, compaction and subagent all work with the same internal model. Confirm tool parsing with the actual vLLM model.
++2. Reject missing/invalid policy, symlinked or writable policy; run as non-root and verify modifying `/etc/opencode`, `/usr/local/bin/opencode` and the image is denied.
++3. Preload malicious user/project configs, config-content env, provider API keys, `small_model`, custom provider NPM package, local plugin, `.opencode/tool`, custom formatter/LSP and MCP. Confirm none causes execution or network access before the trusted config is loaded.
++4. `--model openai/anything`, another internal model, provider config API mutations and auth additions must fail. `--auto`, `--yolo` and `--dangerously-skip-permissions` must fail; TUI must have no auto-approve toggle.
++5. Outbound network attempts from Bash, Python, curl, Node and child processes to internet IPs, cloud endpoints, arbitrary DNS, RFC1918 hosts other than the gateway, IPv6 and `169.254.169.254` must fail. Check CNI is effective, not merely accepting the YAML.
++6. Direct shell request to the approved gateway with a different `model`, routing headers, SSRF media URLs or unlimited token budget must be rejected by the gateway.
++7. Gateway 301/302/307/308, invalid TLS, bad hostname, unavailable gateway and model errors must never produce a cloud fallback. Validate SSE abort closes upstream inference and releases the concurrency slot.
++8. Turn on OTEL variables, sharing and auto-update flags. Capture traffic throughout startup, prompt, subagent, idle, shutdown, error and restart. Expected destinations: approved internal gateway only.
++9. Exercise prompt injection trying to read SSH keys, cloud credentials, service-account token and host files. These must be absent from the container, irrespective of what the model agrees to do.
++10. Verify internal audit identity, policy/model version, tool approval/denial coverage, export ACLs, TTL, deletion and incident kill switch. Gateway logs alone do not audit every filesystem/tool action.
++11. Scan the final image/SBOM and dependencies, review upstream advisories, pin image and lockfile, sign the release, test upgrade rollback. Run one-user/one-container initially; do not expose the local server as a shared multi-tenant service.
++12. Do not grant developers pod update/exec into other users' workspaces, privileged workload creation, hostPath mounting or NetworkPolicy mutation rights. Apply resource quota and per-workspace authorization in the platform.
+diff --git a/enterprise/Dockerfile b/enterprise/Dockerfile
+new file mode 100644
+index 0000000..6298a38
+--- /dev/null
++++ b/enterprise/Dockerfile
+@@ -0,0 +1,24 @@
++# Build from enterprise/ as context after copying in the patched CLI binary.
++# Supply a vetted Linux runtime image by immutable digest. Must contain CA roots,
++# git, rg, bash, and the toolchain required by the target project; no Docker socket.
++ARG RUNTIME_IMAGE
++FROM ${RUNTIME_IMAGE}
++USER root
++RUN mkdir -p /etc/opencode /workspace /home/opencode /tmp \
++    && chown 10001:10001 /workspace /home/opencode \
++    && chmod 0755 /etc/opencode
++COPY --chown=0:0 --chmod=0644 enterprise.example.json /etc/opencode/enterprise.json
++COPY --chown=0:0 --chmod=0755 opencode /usr/local/bin/opencode
++ENV HOME=/home/opencode \
++    XDG_CONFIG_HOME=/home/opencode/.config \
++    XDG_DATA_HOME=/home/opencode/.local/share \
++    XDG_CACHE_HOME=/home/opencode/.cache \
++    OPENCODE_DISABLE_SHARE=true \
++    OPENCODE_DISABLE_AUTOUPDATE=true \
++    OPENCODE_DISABLE_MODELS_FETCH=true \
++    OPENCODE_PURE=true \
++    OTEL_SDK_DISABLED=true \
++    DO_NOT_TRACK=1
++USER 10001:10001
++WORKDIR /workspace
++ENTRYPOINT ["/usr/local/bin/opencode"]
+diff --git a/enterprise/GATEWAY-CONTRACT.md b/enterprise/GATEWAY-CONTRACT.md
+new file mode 100644
+index 0000000..3475560
+--- /dev/null
++++ b/enterprise/GATEWAY-CONTRACT.md
+@@ -0,0 +1,16 @@
++# Required inference gateway contract
++
++The distribution calls only `POST https://inference.internal/v1/chat/completions`.
++The example hostname, private IP and model name are placeholders. No actual vLLM endpoint was supplied.
++
++The gateway is a separate administrative boundary. It MUST:
++
++- Authenticate the workload using platform-controlled identity, e.g. mTLS at the gateway/mesh boundary. This patch's transport intentionally sends no personal API token. Do not expose an unauthenticated inference service to an untrusted network.
++- Authorize one exact `model` value, `enterprise-coder` in the example, including requests made directly from shell tools. Reject alternate models; never route through fallback/cloud providers.
++- Forward to exactly one preconfigured vLLM deployment and set the upstream model ID itself. vLLM should run only the approved model, with the matching `--served-model-name` and model-appropriate tool-call parser/chat template.
++- Accept Chat Completions with streaming and tool calls. Reject redirects, remote media fetching, unsupported routes, unknown passthrough routing fields and provider credentials supplied by the client.
++- Enforce request/context/output limits, per-user/workspace token budget, concurrency, timeout, cancellation and rate limits. Do not depend only on the agent's token estimate or client-supplied username.
++- Log request ID, workload identity, policy version, model, token counts, outcome and latency to an internal audit sink. Prompt/source-code logging is off by default and requires a separate retention/access decision.
++- Deny internet egress on the vLLM/gateway hosts as well as on the agent container. Pre-stage weights and tokenizers; disable runtime model downloads and unreviewed remote model code.
++
++This repository supplies the client restriction and an agent network-policy template, not your gateway implementation or identity integration. A gateway with these properties is a release prerequisite.
+diff --git a/enterprise/HARNESS-COMPARISON.md b/enterprise/HARNESS-COMPARISON.md
+new file mode 100644
+index 0000000..2fd7c59
+--- /dev/null
++++ b/enterprise/HARNESS-COMPARISON.md
+@@ -0,0 +1,77 @@
++# Выбор enterprise coding harness
++
++По состоянию на 2026-09-05. Требование: закрытая среда, одна фиксированная модель
++на внутреннем vLLM, запрет пользовательского добавления cloud providers, управляемые
++инструменты, отсутствие внешней телеметрии. Ниже — анализ официальной документации,
++а не результаты запуска всех продуктов. Наличие настройки не означает невозможность
++её обхода; формулировки «поддерживается» требуют проверки конкретной редакции и версии.
++
++| Harness | Guardrails из коробки | Внутренний vLLM / закрытая среда | Вывод |
++|---|---|---|---|
++| OpenCode | Permissions, managed config, experimental provider.use policies; enterprise offering | OpenAI-compatible endpoint подходит; standalone CLI возможен | Удобная OSS-база; runtime isolation и полная неизменяемая политика требуют дополнительных мер |
++| Cline Enterprise | SSO/RBAC, централизованные конфиги, управление моделями/инструментами, audit/OTEL | Документирован OpenAI-compatible и private infrastructure | Первый кандидат на покупку/POC; подтвердить offline control plane и неизменяемую URL/model policy |
++| Codex CLI | Managed requirements, approvals, OS sandbox, ограничения permission profiles | Custom provider есть; актуальный transport — Responses API | Сильная база sandbox; обычного vLLM Chat Completions недостаточно без совместимости/адаптера |
++| Claude Code | Managed settings, tool permissions, запрет bypass, OS sandbox | Официальный provider ecosystem ориентирован на Claude | Подходит если допустим Claude; произвольная локальная модель не подтверждена как поддерживаемый сценарий |
++| Gemini CLI | System settings, admin-tier policy engine, sandbox | Ориентирован на Gemini/Vertex | Хорошая административная модель; универсальный vLLM backend не установлен по изученной документации |
++| Continue | Self-hosted models, offline режим, отключение telemetry | Документирован vLLM | Хороший локальный IDE вариант; жёсткие централизованные guardrails требуют отдельной проверки |
++| Cursor | Enterprise controls; отдельные self-hosted workers | BYOK запросы проходят через Cursor backend | Не первый выбор для требования полного отсутствия vendor network |
++
++## Рекомендация
++
++Начать с POC Cline Enterprise: проверить, можно ли купить требуемое управление
++вместо постоянного сопровождения форка. Условия приёмки: полностью внутренний
++control plane, отсутствие обязательной vendor telemetry, root/admin-managed
++фиксация baseURL + model (не только списка моделей), отключение пользовательских
++плагинов/MCP, невозможность обхода через env/project config, работоспособность
++при заблокированном интернете и управляемая изоляция shell. Документация поставщика
++не заменяет эти испытания. [Enterprise overview](https://docs.cline.bot/enterprise-solutions/overview),
++[совместимые endpoints](https://docs.cline.bot/provider-config/openai-compatible).
++
++Если нужна полностью контролируемая OSS CLI-поставка, продолжить OpenCode-форк
++с этой серией патчей, внутренним gateway и отдельным sandbox на workspace.
++Официальные [policies](https://opencode.ai/docs/policies/) покрывают provider.use,
++но это экспериментальный механизм; [permissions](https://opencode.ai/docs/permissions/)
++сами по себе не изолируют процессы. Enterprise-возможности upstream тоже стоит
++проверить коммерческим POC: [OpenCode Enterprise](https://opencode.ai/docs/enterprise/).
++
++Codex стоит параллельно проверить, если внутренний gateway способен корректно
++реализовать Responses API: [managed configuration](https://learn.chatgpt.com/docs/enterprise/managed-configuration),
++[security](https://learn.chatgpt.com/docs/security),
++[provider configuration](https://learn.chatgpt.com/docs/config-file/config-reference).
++Из этой документации нельзя вывести, что arbitrary endpoint/model уже неизменяемо
++закреплены всеми нужными constraints; gateway остаётся отдельной границей доверия.
++
++## Остальные кандидаты и источники
++
++Claude Code имеет [managed settings](https://code.claude.com/docs/en/settings)
++и [sandbox](https://code.claude.com/docs/en/sandboxing), включая контроль выхода из
++sandbox. Но [поддерживаемые интеграции](https://code.claude.com/docs/en/third-party-integrations)
++не доказывают возможность заменить Claude любой open-weight моделью на vLLM.
++
++Gemini CLI документирует [enterprise settings](https://geminicli.com/docs/cli/enterprise/)
++и [admin-tier policy](https://geminicli.com/docs/reference/policy-engine/).
++Такая политика сильнее инструкций модели; привилегированный администратор хоста
++всё равно остаётся доверенным.
++
++Continue явно описывает [self-hosted model/vLLM](https://docs.continue.dev/guides/how-to-self-host-a-model)
++и [работу без интернета](https://docs.continue.dev/guides/running-continue-without-internet).
++Rules в prompt не считать security boundary; неизменяемые enterprise policies
++и sandbox нужно подтвердить отдельно, включая коммерческую редакцию.
++
++Для Cursor [BYOK documentation](https://cursor.com/help/models-and-usage/api-keys)
++указывает на прохождение запросов через backend Cursor. Наличие
++[self-hosted workers](https://cursor.com/docs/cloud-agent/self-hosted)
++не означает полностью автономного control plane.
++
++## Универсальный дистрибутив
++
++Универсальным лучше делать платформенный слой: identity → managed policy →
++одноразовый изолированный workspace → внутренний inference gateway → vLLM.
++Harness — заменяемый клиент с адаптером протокола и общей acceptance suite.
++Модель/tool policy закреплять также на gateway; сеть и файлы ограничивать ОС;
++внутренний audit собирать отдельно от продуктовой аналитики.
++
++Не обязательно писать sandbox самостоятельно: Docker документирует
++[запуск OpenCode в Sandboxes](https://docs.docker.com/ai/sandboxes/agents/opencode/).
++Это кандидат на слой исполнения с отдельной проверкой платформенной поддержки,
++сетевой политики и offline provisioning, а не готовая замена model governance.
+diff --git a/enterprise/README.md b/enterprise/README.md
+new file mode 100644
+index 0000000..67d3c56
+--- /dev/null
++++ b/enterprise/README.md
+@@ -0,0 +1,75 @@
++# OpenCode Enterprise: серия патчей
++
++Дата review: 2026-09-05. Upstream: https://github.com/anomalyco/opencode, релиз v1.18.29,
++точный baseline: `16747470f976aca3d362ad730bcd3fe82ecc2c9a`.
++
++Это проверенный сборкой кандидат Linux CLI/TUI для дальнейшей enterprise-приёмки.
++Поддерживаются локальные CLI/TUI и `run`, один внутренний OpenAI-compatible
++Chat Completions endpoint и одна модель. Desktop, Web, ACP, облачные аккаунты,
++внешние плагины/MCP и экспериментальный V2 не входят в поддерживаемый профиль.
++Это намеренно ограниченный профиль; полноценный универсальный дистрибутив требует
++отдельно проектировать управляемые исключения, внутренний каталог инструментов и аудит.
++
++## Применение к своему форку
++
++В чистом checkout своего форка, при наличии upstream baseline:
++
++```sh
++git switch -c enterprise-guardrails 16747470f976aca3d362ad730bcd3fe82ecc2c9a
++git am /absolute/path/to/patches/000*.patch
++```
++
++Серия: (1) доверенная конфигурация и одна модель; (2) транспорт и запреты обхода;
++(3) отключение удалённой телеметрии/sharing/cloud entrypoints; (4) тесты и документация.
++Не применять вслепую к другой версии. После обновления повторить review изменённых
++путей выполнения и все release gates. Публичный форк в рамках этой работы не создан:
++для публикации нужен доступный целевой OpenCode-репозиторий.
++
++## Сборка
++
++В контролируемом CI нужны Bun 1.3.14, зависимости из lockfile и одобренные зеркала.
++Сборка сама по себе не является offline: скачивание зависимостей/ассетов выполняется
++на этапе подготовки. Runtime не должен скачивать инструменты.
++
++```sh
++bun install --frozen-lockfile --ignore-scripts
++bun run --cwd packages/core fix-node-pty
++cd packages/opencode
++bun run script/build.ts --single --skip-install --skip-embed-web-ui
++```
++
++Администратор задаёт реальный endpoint, model ID и лимиты в
++`enterprise/enterprise.example.json`. Он копируется в образ как
++`/etc/opencode/enterprise.json`: root:root, 0644; родители root-owned и без записи
++для группы/остальных; root filesystem read-only. Отсутствующая/некорректная политика
++останавливает программу, включая `--version`. Для встроенного smoke test сборки
++нужен этот файл в изолированном CI-контейнере. Не меняйте policy на рабочем хосте
++ради сборки. Пример — заглушка, он не указывает на ваш действующий inference.
++
++Для x64 скопируйте `packages/opencode/dist/opencode-linux-x64/bin/opencode` в
++`enterprise/opencode`, затем соберите Dockerfile с `RUNTIME_IMAGE`, закреплённым
++по digest. Бинарник и образ должны быть подписаны и проверены вашим CI.
++В Kubernetes-шаблоне замените image digest, адрес gateway, имя TLS и лимиты;
++сначала примените NetworkPolicy. Шаблон не был развёрнут в этой работе.
++
++Клиент не передаёт личные bearer tokens: аутентификация workload должна обеспечиваться
++внутренним gateway/mesh. Прочитайте GATEWAY-CONTRACT.md перед подключением vLLM.
++
++## Проверено
++
++- 32 теста: enterprise policy/transport и observability; 0 failures, 52 assertions.
++- `bun typecheck` в packages/core, packages/opencode, packages/tui.
++- Linux x64 binary собран; build smoke test `--version` прошёл.
++- CLI `models` с враждебным OPENCODE_CONFIG_CONTENT, облачной моделью и произвольным
++  provider npm вернул только `enterprise/enterprise-coder`.
++
++Команды тестов выполняются в packages/core:
++
++```sh
++bun test test/enterprise/policy.test.ts test/effect/observability.test.ts
++bun typecheck
++```
++
++Не проверены: реальный vLLM, качество/tool calling выбранной модели, интерактивные
++сценарии TUI целиком, deployed CNI/network capture, image/SBOM scan, SSO, SIEM,
++изоляция между пользователями и production gateway. Критерии — ACCEPTANCE.md.
+diff --git a/enterprise/SECURITY-REVIEW.md b/enterprise/SECURITY-REVIEW.md
+new file mode 100644
+index 0000000..3f4305e
+--- /dev/null
++++ b/enterprise/SECURITY-REVIEW.md
+@@ -0,0 +1,73 @@
++# Security review OpenCode enterprise candidate
++
++2026-09-05; baseline v1.18.29 / 16747470f976aca3d362ad730bcd3fe82ecc2c9a.
++Метод: чтение критических путей исходного кода, патчи, направленные тесты,
++проверка типов, сборка и CLI smoke test. Это не независимый pentest, не полный
++аудит всех зависимостей и не сертификация enterprise-ready.
++
++## Граница доверия
++
++Цель: пользователь и файлы проекта не могут подключить другой provider/model
++или изменить фиксированный endpoint в поддерживаемом Linux CLI-профиле.
++Доверены администратор образа, root-owned policy, CI, kernel/CNI и внутренний gateway.
++Root/администратор платформы может изменить программу; патчи этого не предотвращают.
++Разработчик с обычным доступом к своему компьютеру тоже может запустить другой клиент.
++Поэтому обязательны управляемый runtime и сетевые ограничения вне процесса.
++
++Сам upstream прямо описывает OpenCode как не являющийся sandbox; permission prompts
++не заменяют изоляцию ОС. Это исходное ограничение продукта, а не установленная
++уязвимость данного релиза. [Upstream security policy](https://github.com/anomalyco/opencode/security).
++
++## Находки и меры
++
++| Риск | Где проверено / изменение | Остаток |
++|---|---|---|
++| Критический: shell обходит запрет облачных моделей | NetworkPolicy, непривилегированный контейнер, отсутствие host mounts и token | CNI и IPv6 надо проверять на реальном кластере; один YAML не доказательство |
++| Высокий: конфиг проекта/env добавляет provider, плагины или меняет URL | config/config.ts: ранний trusted-config путь до разрешения пользовательских конфигов и плагинов; mutations запрещены | Root policy — доверенная административная поверхность |
++| Высокий: альтернативная модель для summary/subagent | enterprise/policy.ts фиксирует model и small_model; provider/provider.ts проверяет выбор перед SDK/cache | Реальные compaction/subagent workflows с vLLM ещё требуют теста |
++| Высокий: redirect/custom fetch/header уводит inference | enterprise/transport.ts фиксирует HTTPS route, POST/model, запрещает redirect и remote media, реконструирует headers | DNS/IP enforce снаружи; gateway должен запретить cloud fallback и произвольные модели |
++| Высокий: динамический код plugins/MCP/LSP/formatter/skills | trusted config + plugin early return + TUI config defaults + downloads disabled + central denies | Утрачена соответствующая функциональность; не добавлять исключения через проектный конфиг |
++| Высокий: внешняя передача сессий | share-next.ts: disabled и блокирующий request guard; CLI cloud/web/import/attach/serve/ACP entrypoints удалены из регистрации | В исходниках остаются неподдерживаемые пакеты; нельзя отдельно выпускать из них продукты |
++| Высокий: внешняя наблюдаемость/идентификаторы | core/observability/otlp.ts заменён no-op, нет OTLP exporters/attributes; конфиг OTEL отключён | Локальные логи и история остаются чувствительными; это не удаление всех данных пользователя |
++| Средний: модели/обновления как неявный egress | models-dev runtime — пустой каталог; generate.ts не скачивает каталог; autoupdate выключен | CI downloads остаются, нужны зеркала и проверка supply chain |
++| Высокий: обход согласований | CLI auto/yolo flags отвергаются; TUI normal-only; deny floor применяется к сохранённым разрешениям/субагентам | Ask/allow для shell не является проверкой безопасности команды |
++| Высокий: experimental execution path | runtime flags выключены; V2 provider.use запрещён fail-closed | V2 функциональность не поддерживается данным профилем |
++| Высокий: чтение секретов/подмена сборки | read-only image, non-root, отдельный workspace, без SA token | Secret-free workspace и RBAC обеспечиваются платформой; модель может читать доступные ей файлы |
++
++## Что удалено и что не следует обещать
++
++Удалён действующий OTLP export из core. Отключены sharing, public model catalog,
++autoupdate, встроенные auth/cloud plugins и перечисленные сетевые функции в
++поддерживаемом CLI. Это не доказательство отсутствия любой телеметрии во всём
++монорепозитории, всех сторонних SDK или в запущенных shell-командах. Cloud SDK
++dependencies физически не вычищены из lockfile: нужен отдельный анализ reachability
++и SBOM готового бинарника/образа. Неподдерживаемые desktop/web packages не релизить.
++
++Локальные логи, session DB, prompts и tool outputs сохранены ради работы harness.
++Задать шифрование дисков, ACL, retention/deletion и редактирование секретов при
++экспорте. Удаление remote analytics не заменяет корпоративный security audit:
++необходим внутренний журнал пользователя, версии политики, approvals/denials,
++действий инструментов и результатов. Gateway видит inference, но не все действия
++на файловой системе. Такой SIEM-конвейер здесь не реализован.
++
++## Обязательные дальнейшие работы
++
++1. Реализовать GATEWAY-CONTRACT: workload identity, единственная модель и upstream,
++   deny remote media/routing overrides, quotas/budgets и внутренний audit.
++2. Выполнить ACCEPTANCE.md на реальном vLLM; подтвердить streaming и tool parser.
++3. Проверить egress всех дочерних процессов, metadata/DNS/IPv6; gateway тоже без
++   интернет-выхода. Контейнер не должен иметь host Docker socket или host credentials.
++4. Сканировать и подписать конечный образ, подготовить SBOM и процесс срочного
++   обновления upstream. Официальные advisory проверять перед каждым выпуском;
++   наличие advisory в истории не означает применимость к этому baseline.
++5. При необходимости MCP/LSP создать администраторский подписанный каталог,
++   отдельную изоляцию серверов, scoped credentials и audit. Не возвращать загрузку
++   произвольных npm/plugins ради удобства.
++
++## Проверки и пределы доказательства
++
++32 направленных теста прошли; typecheck трёх пакетов и Linux binary build прошли;
++CLI проигнорировал внедрённый облачный конфиг. Тесты проверяют policy schema,
++фиксированный endpoint/model, remote media и no-op telemetry. Они не являются
++пакетным захватом трафика и не доказывают изоляцию runtime. Production rollout
++заблокирован до прохождения перечисленных release gates.
+diff --git a/enterprise/enterprise.example.json b/enterprise/enterprise.example.json
+new file mode 100644
+index 0000000..b68da71
+--- /dev/null
++++ b/enterprise/enterprise.example.json
+@@ -0,0 +1,6 @@
++{
++  "baseURL": "https://inference.internal/v1",
++  "model": "enterprise-coder",
++  "context": 32768,
++  "output": 8192
++}
+diff --git a/enterprise/runtime.example.yaml b/enterprise/runtime.example.yaml
+new file mode 100644
+index 0000000..41cbbbb
+--- /dev/null
++++ b/enterprise/runtime.example.yaml
+@@ -0,0 +1,91 @@
++# TEMPLATE: replace the image digest and gateway IP together with enterprise.example.json.
++# Apply NetworkPolicy BEFORE creating the Pod. CNI MUST enforce egress policies.
++apiVersion: v1
++kind: Namespace
++metadata:
++  name: enterprise-agents
++  labels:
++    pod-security.kubernetes.io/enforce: restricted
++---
++apiVersion: networking.k8s.io/v1
++kind: NetworkPolicy
++metadata:
++  name: opencode-isolation
++  namespace: enterprise-agents
++spec:
++  podSelector:
++    matchLabels:
++      app: opencode-enterprise
++  policyTypes: [Ingress, Egress]
++  ingress: []
++  egress:
++    - to:
++        - ipBlock:
++            cidr: 10.77.0.10/32
++      ports:
++        - protocol: TCP
++          port: 443
++# No general DNS allowance: prevent DNS exfiltration through an approved resolver.
++# Use a fixed, company-managed gateway IP; test service-NAT semantics on your CNI.
++---
++apiVersion: v1
++kind: Pod
++metadata:
++  name: opencode-workspace
++  namespace: enterprise-agents
++  labels:
++    app: opencode-enterprise
++spec:
++  automountServiceAccountToken: false
++  enableServiceLinks: false
++  hostNetwork: false
++  hostPID: false
++  hostIPC: false
++  dnsPolicy: None
++  dnsConfig:
++    nameservers: [127.0.0.1]
++  hostAliases:
++    - ip: 10.77.0.10
++      hostnames: [inference.internal]
++  securityContext:
++    runAsNonRoot: true
++    runAsUser: 10001
++    runAsGroup: 10001
++    fsGroup: 10001
++    seccompProfile:
++      type: RuntimeDefault
++  containers:
++    - name: agent
++      image: registry.internal/opencode-enterprise@sha256:REPLACE_WITH_APPROVED_DIGEST
++      # Idle workspace for kubectl exec -it ... -- opencode; no service or inbound API.
++      command: [/bin/sleep, infinity]
++      securityContext:
++        allowPrivilegeEscalation: false
++        readOnlyRootFilesystem: true
++        capabilities:
++          drop: [ALL]
++      resources:
++        requests:
++          cpu: '1'
++          memory: 2Gi
++        limits:
++          cpu: '4'
++          memory: 8Gi
++          ephemeral-storage: 10Gi
++      volumeMounts:
++        - name: workspace
++          mountPath: /workspace
++        - name: state
++          mountPath: /home/opencode
++        - name: tmp
++          mountPath: /tmp
++  volumes:
++    - name: workspace
++      emptyDir:
++        sizeLimit: 5Gi
++    - name: state
++      emptyDir:
++        sizeLimit: 2Gi
++    - name: tmp
++      emptyDir:
++        sizeLimit: 2Gi
+diff --git a/packages/core/test/effect/observability.test.ts b/packages/core/test/effect/observability.test.ts
+index 4758563..fcb86fe 100644
+--- a/packages/core/test/effect/observability.test.ts
++++ b/packages/core/test/effect/observability.test.ts
+@@ -19,36 +19,9 @@ afterEach(() => {
+ })
+ 
+ describe("resource", () => {
+-  test("parses and decodes OTEL resource attributes", () => {
+-    process.env.OTEL_RESOURCE_ATTRIBUTES =
+-      "service.namespace=anomalyco,team=platform%2Cobservability,label=hello%3Dworld,key%2Fname=value%20here"
+-
+-    expect(resource().attributes).toMatchObject({
+-      "service.namespace": "anomalyco",
+-      team: "platform,observability",
+-      label: "hello=world",
+-      "key/name": "value here",
+-    })
+-  })
+-
+-  test("drops OTEL resource attributes when any entry is invalid", () => {
+-    process.env.OTEL_RESOURCE_ATTRIBUTES = "service.namespace=anomalyco,broken"
+-
+-    expect(resource().attributes["service.namespace"]).toBeUndefined()
+-    expect(resource().attributes["opencode.client"]).toBeDefined()
+-  })
+-
+-  test("keeps built-in attributes when env values conflict", () => {
+-    process.env.OPENCODE_CLIENT = "cli"
+-    process.env.OTEL_RESOURCE_ATTRIBUTES =
+-      "opencode.client=web,service.instance.id=override,service.namespace=anomalyco"
+-
+-    expect(resource().attributes).toMatchObject({
+-      "opencode.client": "cli",
+-      "service.namespace": "anomalyco",
+-    })
+-    expect(resource().attributes["service.instance.id"]).not.toBe("override")
+-    expect(resource().attributes["opencode.run"]).toMatch(/^[0-9a-f]{8}$/)
++  test("does not export identity or caller-provided OTEL attributes", () => {
++    process.env.OTEL_RESOURCE_ATTRIBUTES = "service.namespace=secret,opencode.client=private"
++    expect(resource().attributes).toEqual({})
+   })
+ })
+ 
+diff --git a/packages/core/test/enterprise/policy.test.ts b/packages/core/test/enterprise/policy.test.ts
+new file mode 100644
+index 0000000..d4f25b5
+--- /dev/null
++++ b/packages/core/test/enterprise/policy.test.ts
+@@ -0,0 +1,86 @@
++import { describe, expect, test } from "bun:test"
++import { Schema } from "effect"
++import { Enterprise } from "../../src/enterprise/policy"
++import { EnterpriseTransport } from "../../src/enterprise/transport"
++import { ConfigV1 } from "../../src/v1/config/config"
++import { Otlp } from "../../src/observability/otlp"
++
++const policy = { baseURL: "https://inference.internal/v1", model: "enterprise-coder", context: 32768, output: 8192 }
++const request = {
++  method: "POST",
++  body: JSON.stringify({ model: policy.model, messages: [{ role: "user", content: "test" }] }),
++}
++
++describe("immutable enterprise policy", () => {
++  test("validates the deployment policy and the actual OpenCode config schema", () => {
++    expect(Enterprise.decode(JSON.stringify(policy))).toEqual(policy)
++    expect(() => Schema.decodeUnknownSync(ConfigV1.Info)(Enterprise.config(policy))).not.toThrow()
++    expect(Object.keys(Enterprise.config(policy).provider)).toEqual(["enterprise"])
++    expect(Enterprise.config(policy).small_model).toBe("enterprise/enterprise-coder")
++  })
++  test.each([
++    "http://inference.internal/v1",
++    "https://user:password@inference.internal/v1",
++    "https://inference.internal/v1?url=evil",
++    "https://inference.internal/v1#evil",
++    "https://inference.internal/v2",
++  ])("rejects endpoint %s", (baseURL) => {
++    expect(() => Enterprise.decode(JSON.stringify({ ...policy, baseURL }))).toThrow()
++  })
++  test.each(["", "a;b", "a b", "../#evil"])("rejects ambiguous model ID %s", (model) => {
++    expect(() => Enterprise.decode(JSON.stringify({ ...policy, model }))).toThrow()
++  })
++  test("does not reuse mutated config objects", () => {
++    const config = Enterprise.config(policy)
++    config.provider.enterprise.options.baseURL = "https://evil.example/v1"
++    expect(Enterprise.config(policy).provider.enterprise.options.baseURL).toBe(policy.baseURL)
++  })
++  test.each(["webfetch", "websearch", "codesearch", "external_directory", "mcp_test", "mcp.test", "lsp", "skill"])(
++    "mandatory deny: %s",
++    (tool) => {
++      expect(Enterprise.denied(tool)).toBe(true)
++    },
++  )
++  test("keeps the coding tools available for permission checks", () => {
++    for (const tool of ["read", "edit", "bash", "glob", "grep", "task"]) expect(Enterprise.denied(tool)).toBe(false)
++  })
++})
++
++describe("inference transport before network I/O", () => {
++  test("accepts only the configured model and endpoint", () => {
++    expect(() => EnterpriseTransport.validate(policy, `${policy.baseURL}/chat/completions`, request)).not.toThrow()
++  })
++  test.each([
++    "https://api.openai.com/v1/chat/completions",
++    "https://inference.internal.evil/v1/chat/completions",
++    "https://inference.internal/v1/responses",
++    "https://inference.internal/v1/chat/completions?target=evil",
++    "http://169.254.169.254/latest/meta-data",
++  ])("rejects route %s", (url) => {
++    expect(() => EnterpriseTransport.validate(policy, url, request)).toThrow()
++  })
++  test("blocks model injection and non-JSON bodies", () => {
++    expect(() =>
++      EnterpriseTransport.validate(policy, `${policy.baseURL}/chat/completions`, {
++        ...request,
++        body: '{"model":"gpt-cloud"}',
++      }),
++    ).toThrow()
++    expect(() =>
++      EnterpriseTransport.validate(policy, `${policy.baseURL}/chat/completions`, { method: "GET" }),
++    ).toThrow()
++  })
++  test("blocks inference-server remote media fetching", () => {
++    const body = JSON.stringify({
++      model: policy.model,
++      messages: [{ content: [{ image_url: { url: "http://169.254.169.254/" } }] }],
++    })
++    expect(() =>
++      EnterpriseTransport.validate(policy, `${policy.baseURL}/chat/completions`, { ...request, body }),
++    ).toThrow()
++  })
++  test("has no OTLP log exporters or identity attributes", () => {
++    expect(Otlp.loggers()).toEqual([])
++    expect(Otlp.resource().attributes).toEqual({})
++  })
++})
+-- 
+2.51.1
+

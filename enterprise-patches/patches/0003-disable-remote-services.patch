@@ -1,0 +1,354 @@
+From 69411c8850b35a3e63d7a346af82ff1e918e08d6 Mon Sep 17 00:00:00 2001
+From: Codex <codex@users.noreply.github.com>
+Date: Sat, 5 Sep 2026 14:00:26 +0200
+Subject: [PATCH 3/4] fix(enterprise): remove remote telemetry sharing and
+ cloud entrypoints
+
+---
+ packages/core/src/flag/flag.ts                |  4 +-
+ packages/core/src/observability/otlp.ts       | 76 ++-----------------
+ packages/opencode/script/generate.ts          | 16 +---
+ packages/opencode/src/effect/runtime-flags.ts | 24 +++---
+ packages/opencode/src/index.ts                | 30 +-------
+ packages/opencode/src/share/share-next.ts     |  3 +-
+ packages/tui/src/app.tsx                      | 10 ---
+ packages/tui/src/context/permission.tsx       | 28 ++-----
+ 8 files changed, 34 insertions(+), 157 deletions(-)
+
+diff --git a/packages/core/src/flag/flag.ts b/packages/core/src/flag/flag.ts
+index a0eb78a..75df858 100644
+--- a/packages/core/src/flag/flag.ts
++++ b/packages/core/src/flag/flag.ts
+@@ -20,13 +20,13 @@ export const Flag = {
+   OPENCODE_GIT_BASH_PATH: process.env["OPENCODE_GIT_BASH_PATH"],
+   OPENCODE_CONFIG: process.env["OPENCODE_CONFIG"],
+   OPENCODE_CONFIG_CONTENT: process.env["OPENCODE_CONFIG_CONTENT"],
+-  OPENCODE_DISABLE_AUTOUPDATE: truthy("OPENCODE_DISABLE_AUTOUPDATE"),
++  OPENCODE_DISABLE_AUTOUPDATE: true,
+   OPENCODE_ALWAYS_NOTIFY_UPDATE: truthy("OPENCODE_ALWAYS_NOTIFY_UPDATE"),
+   OPENCODE_DISABLE_PRUNE: truthy("OPENCODE_DISABLE_PRUNE"),
+   OPENCODE_DISABLE_TERMINAL_TITLE: truthy("OPENCODE_DISABLE_TERMINAL_TITLE"),
+   OPENCODE_SHOW_TTFD: truthy("OPENCODE_SHOW_TTFD"),
+   OPENCODE_DISABLE_AUTOCOMPACT: truthy("OPENCODE_DISABLE_AUTOCOMPACT"),
+-  OPENCODE_DISABLE_MODELS_FETCH: truthy("OPENCODE_DISABLE_MODELS_FETCH"),
++  OPENCODE_DISABLE_MODELS_FETCH: true,
+   OPENCODE_DISABLE_MOUSE: truthy("OPENCODE_DISABLE_MOUSE"),
+   OPENCODE_FAKE_VCS: process.env["OPENCODE_FAKE_VCS"],
+   OPENCODE_SERVER_PASSWORD: process.env["OPENCODE_SERVER_PASSWORD"],
+diff --git a/packages/core/src/observability/otlp.ts b/packages/core/src/observability/otlp.ts
+index dd99ebc..b708e7f 100644
+--- a/packages/core/src/observability/otlp.ts
++++ b/packages/core/src/observability/otlp.ts
+@@ -1,79 +1,13 @@
+ import { Layer } from "effect"
+-import { OtlpLogger } from "effect/unstable/observability"
+-import { Flag } from "../flag/flag"
+-import { InstallationChannel, InstallationVersion } from "../installation/version"
+-import { runID } from "./shared"
+ 
+-const endpoint = Flag.OTEL_EXPORTER_OTLP_ENDPOINT
+-
+-const headers = Flag.OTEL_EXPORTER_OTLP_HEADERS
+-  ? Flag.OTEL_EXPORTER_OTLP_HEADERS.split(",").reduce(
+-      (acc, entry) => {
+-        const [key, ...value] = entry.split("=")
+-        acc[key] = value.join("=")
+-        return acc
+-      },
+-      {} as Record<string, string>,
+-    )
+-  : undefined
+-
+-function resourceAttributes() {
+-  const value = process.env.OTEL_RESOURCE_ATTRIBUTES
+-  if (!value) return {}
+-  try {
+-    return Object.fromEntries(
+-      value.split(",").map((entry) => {
+-        const index = entry.indexOf("=")
+-        if (index < 1) throw new Error("Invalid OTEL_RESOURCE_ATTRIBUTES entry")
+-        return [decodeURIComponent(entry.slice(0, index)), decodeURIComponent(entry.slice(index + 1))]
+-      }),
+-    )
+-  } catch {
+-    return {}
+-  }
++// No exporter imports, endpoints, headers or identity attributes in this distribution.
++export function resource() {
++  return { serviceName: "opencode", serviceVersion: "enterprise", attributes: {} }
+ }
+-
+-export function resource(): { serviceName: string; serviceVersion: string; attributes: Record<string, string> } {
+-  return {
+-    serviceName: "opencode",
+-    serviceVersion: InstallationVersion,
+-    attributes: {
+-      ...resourceAttributes(),
+-      "deployment.environment.name": InstallationChannel,
+-      "opencode.client": Flag.OPENCODE_CLIENT,
+-      "opencode.run": runID,
+-      "service.instance.id": runID,
+-    },
+-  }
+-}
+-
+ export function loggers() {
+-  if (!endpoint) return []
+-  return [OtlpLogger.make({ url: `${endpoint}/v1/logs`, resource: resource(), headers })]
++  return []
+ }
+-
+ export async function tracingLayer() {
+-  if (!endpoint) return Layer.empty
+-  const NodeSdk = await import("@effect/opentelemetry/NodeSdk")
+-  const OTLP = await import("@opentelemetry/exporter-trace-otlp-http")
+-  const SdkBase = await import("@opentelemetry/sdk-trace-base")
+-  const { AsyncLocalStorageContextManager } = await import("@opentelemetry/context-async-hooks")
+-  const { context } = await import("@opentelemetry/api")
+-
+-  // The Effect Node SDK does not register a global context manager, but the AI SDK uses it to parent spans.
+-  const manager = new AsyncLocalStorageContextManager()
+-  manager.enable()
+-  context.setGlobalContextManager(manager)
+-
+-  return NodeSdk.layer(() => ({
+-    resource: resource(),
+-    spanProcessor: new SdkBase.BatchSpanProcessor(
+-      new OTLP.OTLPTraceExporter({
+-        url: `${endpoint}/v1/traces`,
+-        headers,
+-      }),
+-    ),
+-  }))
++  return Layer.empty
+ }
+-
+ export * as Otlp from "./otlp"
+diff --git a/packages/opencode/script/generate.ts b/packages/opencode/script/generate.ts
+index 91a2d30..3b9f9c8 100644
+--- a/packages/opencode/script/generate.ts
++++ b/packages/opencode/script/generate.ts
+@@ -1,14 +1,2 @@
+-import path from "path"
+-import { fileURLToPath } from "url"
+-
+-const __filename = fileURLToPath(import.meta.url)
+-const __dirname = path.dirname(__filename)
+-const dir = path.resolve(__dirname, "..")
+-
+-process.chdir(dir)
+-
+-const modelsUrl = process.env.OPENCODE_MODELS_URL || "https://models.dev"
+-export const modelsData = process.env.MODELS_DEV_API_JSON
+-  ? await Bun.file(process.env.MODELS_DEV_API_JSON).text()
+-  : await fetch(`${modelsUrl}/api.json`).then((x) => x.text())
+-console.log("Loaded models.dev snapshot")
++// Enterprise builds do not download or embed public model catalogs.
++export const modelsData = "{}"
+diff --git a/packages/opencode/src/effect/runtime-flags.ts b/packages/opencode/src/effect/runtime-flags.ts
+index 65e02f0..df8b6a5 100644
+--- a/packages/opencode/src/effect/runtime-flags.ts
++++ b/packages/opencode/src/effect/runtime-flags.ts
+@@ -14,12 +14,12 @@ const enabledByExperimental = (name: string) =>
+   )
+ 
+ export class Service extends ConfigService.Service<Service>()("@opencode/RuntimeFlags", {
+-  autoShare: bool("OPENCODE_AUTO_SHARE"),
+-  pure: bool("OPENCODE_PURE"),
+-  disableDefaultPlugins: bool("OPENCODE_DISABLE_DEFAULT_PLUGINS"),
+-  disableEmbeddedWebUi: bool("OPENCODE_DISABLE_EMBEDDED_WEB_UI"),
+-  disableExternalSkills: bool("OPENCODE_DISABLE_EXTERNAL_SKILLS"),
+-  disableLspDownload: bool("OPENCODE_DISABLE_LSP_DOWNLOAD"),
++  autoShare: Config.succeed(false),
++  pure: Config.succeed(true),
++  disableDefaultPlugins: Config.succeed(true),
++  disableEmbeddedWebUi: Config.succeed(true),
++  disableExternalSkills: Config.succeed(true),
++  disableLspDownload: Config.succeed(true),
+   disableClaudeCodePrompt: Config.all({
+     broad: bool("OPENCODE_DISABLE_CLAUDE_CODE"),
+     direct: bool("OPENCODE_DISABLE_CLAUDE_CODE_PROMPT"),
+@@ -39,20 +39,20 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
+   }).pipe(Config.map((flags) => flags.enabled || flags.legacy)),
+   enableExperimentalModels: bool("OPENCODE_ENABLE_EXPERIMENTAL_MODELS"),
+   enableQuestionTool: bool("OPENCODE_ENABLE_QUESTION_TOOL"),
+-  experimentalReferences: enabledByExperimental("OPENCODE_EXPERIMENTAL_REFERENCES"),
+-  experimentalBackgroundSubagents: enabledByExperimental("OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS"),
++  experimentalReferences: Config.succeed(false),
++  experimentalBackgroundSubagents: Config.succeed(false),
+   experimentalLspTy: bool("OPENCODE_EXPERIMENTAL_LSP_TY"),
+   experimentalLspTool: enabledByExperimental("OPENCODE_EXPERIMENTAL_LSP_TOOL"),
+   experimentalOxfmt: enabledByExperimental("OPENCODE_EXPERIMENTAL_OXFMT"),
+   experimentalPlanMode: enabledByExperimental("OPENCODE_EXPERIMENTAL_PLAN_MODE"),
+-  experimentalCodeMode: enabledByExperimental("OPENCODE_EXPERIMENTAL_CODE_MODE"),
++  experimentalCodeMode: Config.succeed(false),
+   experimentalEventSystem: enabledByExperimental("OPENCODE_EXPERIMENTAL_EVENT_SYSTEM"),
+-  experimentalWorkspaces: enabledByExperimental("OPENCODE_EXPERIMENTAL_WORKSPACES"),
++  experimentalWorkspaces: Config.succeed(false),
+   experimentalIconDiscovery: enabledByExperimental("OPENCODE_EXPERIMENTAL_ICON_DISCOVERY"),
+   outputTokenMax: positiveInteger("OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX"),
+   bashDefaultTimeoutMs: positiveInteger("OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS"),
+-  experimentalNativeLlm: bool("OPENCODE_EXPERIMENTAL_NATIVE_LLM"),
+-  experimentalWebSockets: bool("OPENCODE_EXPERIMENTAL_WEBSOCKETS"),
++  experimentalNativeLlm: Config.succeed(false),
++  experimentalWebSockets: Config.succeed(false),
+   client: Config.string("OPENCODE_CLIENT").pipe(Config.withDefault("cli")),
+ }) {}
+ 
+diff --git a/packages/opencode/src/index.ts b/packages/opencode/src/index.ts
+index 13540a7..f01ba01 100644
+--- a/packages/opencode/src/index.ts
++++ b/packages/opencode/src/index.ts
+@@ -1,36 +1,27 @@
++import { Enterprise } from "@opencode-ai/core/enterprise/policy"
+ import yargs from "yargs"
+ import { hideBin } from "yargs/helpers"
+ import { RunCommand } from "./cli/cmd/run"
+-import { GenerateCommand } from "./cli/cmd/generate"
+-import { ConsoleCommand } from "./cli/cmd/account"
+-import { ProvidersCommand } from "./cli/cmd/providers"
+ import { AgentCommand } from "./cli/cmd/agent"
+-import { UpgradeCommand } from "./cli/cmd/upgrade"
+ import { UninstallCommand } from "./cli/cmd/uninstall"
+ import { ModelsCommand } from "./cli/cmd/models"
+ import { UI } from "./cli/ui"
+ import { InstallationVersion } from "@opencode-ai/core/installation/version"
+ import { FormatError } from "./cli/error"
+-import { ServeCommand } from "./cli/cmd/serve"
+ import { DebugCommand } from "./cli/cmd/debug"
+ import { StatsCommand } from "./cli/cmd/stats"
+-import { McpCommand } from "./cli/cmd/mcp"
+-import { GithubCommand } from "./cli/cmd/github"
+ import { ExportCommand } from "./cli/cmd/export"
+-import { ImportCommand } from "./cli/cmd/import"
+-import { AttachCommand } from "./cli/cmd/attach"
+ import { TuiThreadCommand } from "./cli/cmd/tui"
+-import { AcpCommand } from "./cli/cmd/acp"
+ import { EOL } from "os"
+-import { WebCommand } from "./cli/cmd/web"
+-import { PrCommand } from "./cli/cmd/pr"
+ import { SessionCommand } from "./cli/cmd/session"
+ import { DbCommand } from "./cli/cmd/db"
+ import { errorMessage } from "./util/error"
+-import { PluginCommand } from "./cli/cmd/plug"
+ import { Heap } from "./cli/heap"
+ 
++Enterprise.read() // No missing-policy fallback, including the TUI parent process.
+ const args = hideBin(process.argv)
++if (args.some((arg) => ["--auto", "--yolo", "--dangerously-skip-permissions"].includes(arg.split("=")[0])))
++  throw new Error("Auto-approval is disabled in the enterprise CLI")
+ 
+ function show(out: string) {
+   const text = out.trimStart()
+@@ -78,28 +69,15 @@ const cli = yargs(args)
+   })
+   .usage("")
+   .completion("completion", "generate shell completion script")
+-  .command(AcpCommand)
+-  .command(McpCommand)
+   .command(TuiThreadCommand)
+-  .command(AttachCommand)
+   .command(RunCommand)
+-  .command(GenerateCommand)
+   .command(DebugCommand)
+-  .command(ConsoleCommand)
+-  .command(ProvidersCommand)
+   .command(AgentCommand)
+-  .command(UpgradeCommand)
+   .command(UninstallCommand)
+-  .command(ServeCommand)
+-  .command(WebCommand)
+   .command(ModelsCommand)
+   .command(StatsCommand)
+   .command(ExportCommand)
+-  .command(ImportCommand)
+-  .command(GithubCommand)
+-  .command(PrCommand)
+   .command(SessionCommand)
+-  .command(PluginCommand)
+   .command(DbCommand)
+   .fail((msg, err) => {
+     if (
+diff --git a/packages/opencode/src/share/share-next.ts b/packages/opencode/src/share/share-next.ts
+index 60112e1..f75e2e4 100644
+--- a/packages/opencode/src/share/share-next.ts
++++ b/packages/opencode/src/share/share-next.ts
+@@ -20,7 +20,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
+ import { ModelV2 } from "@opencode-ai/core/model"
+ import { EventV2 } from "@opencode-ai/core/event"
+ 
+-const disabled = process.env["OPENCODE_DISABLE_SHARE"] === "true" || process.env["OPENCODE_DISABLE_SHARE"] === "1"
++const disabled = true
+ 
+ export type Api = {
+   create: string
+@@ -204,6 +204,7 @@ const layer = Layer.effect(
+     )
+ 
+     const request = Effect.fn("ShareNext.request")(function* () {
++      if (disabled) throw new Error("Sharing is removed from the enterprise distribution")
+       const headers: Record<string, string> = {}
+       const active = yield* account.active()
+       if (Option.isNone(active) || !active.value.active_org_id) {
+diff --git a/packages/tui/src/app.tsx b/packages/tui/src/app.tsx
+index 3f1da52..4251159 100644
+--- a/packages/tui/src/app.tsx
++++ b/packages/tui/src/app.tsx
+@@ -943,16 +943,6 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
+           dialog.clear()
+         },
+       },
+-      {
+-        name: "permission.mode",
+-        title:
+-          local.permission.mode === "auto" ? "Disable auto-approve permissions" : "Enable auto-approve permissions",
+-        category: "System",
+-        run: () => {
+-          local.permission.toggle()
+-          dialog.clear()
+-        },
+-      },
+     ].map((command) => ({
+       namespace: "palette",
+       ...command,
+diff --git a/packages/tui/src/context/permission.tsx b/packages/tui/src/context/permission.tsx
+index 13a6ba8..5ac491a 100644
+--- a/packages/tui/src/context/permission.tsx
++++ b/packages/tui/src/context/permission.tsx
+@@ -1,26 +1,12 @@
+-import { createStore } from "solid-js/store"
+-import { useArgs } from "./args"
+ import { createSimpleContext } from "./helper"
+-
+ export type PermissionMode = "auto" | "normal"
+-
+ export const { use: usePermission, provider: PermissionProvider } = createSimpleContext({
+   name: "Permission",
+-  init: () => {
+-    const args = useArgs()
+-    const [store, setStore] = createStore<{ mode: PermissionMode }>({
+-      mode: args.auto ? "auto" : "normal",
+-    })
+-    return {
+-      get mode() {
+-        return store.mode
+-      },
+-      set(mode: PermissionMode) {
+-        setStore("mode", mode)
+-      },
+-      toggle() {
+-        setStore("mode", (mode) => (mode === "auto" ? "normal" : "auto"))
+-      },
+-    }
+-  },
++  init: () => ({
++    get mode(): PermissionMode {
++      return "normal"
++    },
++    set(_mode: PermissionMode) {},
++    toggle() {},
++  }),
+ })
+-- 
+2.51.1
+
