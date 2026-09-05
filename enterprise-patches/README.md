@@ -68,12 +68,35 @@ bun run script/build.ts --single --skip-install --skip-embed-web-ui
 - CLI `models` с враждебным OPENCODE_CONFIG_CONTENT, облачной моделью и произвольным
   provider npm вернул только `enterprise/enterprise-coder`.
 
-Команды тестов выполняются в packages/core:
+### Покрытие тестов патча 0004
+
+| Файл после применения патчей | Проверки |
+|---|---|
+| `packages/core/test/enterprise/policy.test.ts` (новый) | Схема политики и конфигурации OpenCode; допустимый HTTPS endpoint и model ID; независимость объектов конфигурации; обязательные запреты инструментов; точный маршрут/model в inference-запросе; блокировка подмены URL, не-JSON body и remote media; отсутствие OTLP exporter/identity attributes |
+| `packages/core/test/effect/observability.test.ts` (обновлён) | Отсутствие экспорта идентификаторов и OTEL attributes; сохранение работы локального файлового логгера |
+
+32 — общее число прошедших тестов этих двух файлов, а не число полностью новых
+тестов. Проверка внедрённого облачного конфига выполнена отдельно как CLI smoke test.
+
+Запуск после применения серии и установки зависимостей, из корня **патченного**
+worktree:
 
 ```sh
-bun test test/enterprise/policy.test.ts test/effect/observability.test.ts
-bun typecheck
+(cd packages/core && bun test test/enterprise/policy.test.ts test/effect/observability.test.ts)
+(cd packages/core && bun typecheck)
+(cd packages/opencode && bun typecheck)
+(cd packages/tui && bun typecheck)
 ```
+
+Тесты и typecheck запускаются из каталогов пакетов. Для проверки целостности
+опубликованного комплекта до применения патчей:
+
+```sh
+(cd enterprise-patches && sha256sum -c SHA256SUMS)
+```
+
+Результаты выше относятся к уже выполненной локальной проверке baseline. Этот
+README не заявляет наличие нового CI workflow или прохождение GitHub Actions.
 
 Не проверены: реальный vLLM, качество/tool calling выбранной модели, интерактивные
 сценарии TUI целиком, deployed CNI/network capture, image/SBOM scan, SSO, SIEM,

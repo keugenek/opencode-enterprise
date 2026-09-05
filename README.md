@@ -1,3 +1,28 @@
+# OpenCode Enterprise patch distribution
+
+This fork provides four reviewed `.patch` files for a restricted Linux CLI/TUI
+profile using one administrator-configured internal inference model.
+**The patches must be applied to v1.18.29 before building; their presence in this
+branch does not enable enterprise restrictions in the upstream source tree.**
+
+- [Apply the patches and build](enterprise-patches/README.md)
+- [Four patch files and series order](enterprise-patches/patches/)
+- [Security review](enterprise-patches/SECURITY-REVIEW.md)
+- [Harness comparison](enterprise-patches/HARNESS-COMPARISON.md)
+- [Deployment acceptance gates](enterprise-patches/ACCEPTANCE.md)
+
+Validation on the patched baseline: **32 tests passed, 52 assertions**, typechecks
+passed in three packages, and the Linux x64 build and CLI smoke checks passed.
+Patch 0004 adds policy/transport tests and updates observability tests. Real vLLM
+inference, shell egress isolation and production deployment remain unverified.
+See the [test coverage and commands](enterprise-patches/README.md#проверено).
+
+The installation instructions below describe upstream OpenCode. Installing its
+public package does not install this enterprise candidate; use the linked patch
+and build instructions instead.
+
+---
+
 <p align="center">
   <a href="https://opencode.ai">
     <picture>
