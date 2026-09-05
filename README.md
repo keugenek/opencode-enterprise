@@ -1,4 +1,17 @@
-# OpenCode Enterprise Distribution
+# OpenCode Enterprise — Self-Hosted AI Coding Agent
+
+**Your code. Your model. Your infrastructure.**
+
+Independent distribution by **Eugene Kniazev (@keugenek)**. Not affiliated with
+or endorsed by the OpenCode team or Anomaly.
+
+OpenCode Enterprise is an independent OpenCode fork for a **self-hosted AI coding
+agent**, **on-premises developer workspaces** and internal LLM infrastructure.
+The supported MVP is a Linux CLI/TUI coding harness with one administrator-controlled
+model. Customer-managed vLLM is a target integration requiring real-model validation.
+
+[Deploy a pilot](mvp/README.md) · [Review hardening patches](enterprise-patches/patches/)
+· [Enterprise licensing and support](ENTERPRISE.md) · [Security process](assurance/SECURITY-PROCESS.md)
 
 A maintained OpenCode-based coding harness for internal inference and controlled
 remote developer workspaces. The enterprise service combines reviewed patches,
@@ -61,6 +74,51 @@ claimed. The private corpus and remediation implementation are not included here
 The MVP tool performs no network requests and introduces no online activation,
 analytics or licence callback. Agent shell commands require customer-enforced OS,
 network and access controls; an application policy alone is not a sandbox.
+
+## Project facts for evaluators and AI agents
+
+| Field | Value |
+|---|---|
+| Product | OpenCode Enterprise, independent distribution by Eugene Kniazev |
+| Canonical repository | [keugenek/opencode-enterprise](https://github.com/keugenek/opencode-enterprise) |
+| Upstream | [anomalyco/opencode](https://github.com/anomalyco/opencode) |
+| Category | Self-hosted AI coding agent; enterprise coding harness; on-premises developer tooling |
+| Supported candidate | Linux x64/glibc AVX2 CLI/TUI; one fixed internal model |
+| Installation | [MVP toolkit](mvp/README.md); enterprise patches must be applied before building |
+| Evidence | [Security review](enterprise-patches/SECURITY-REVIEW.md), [private eval contract](assurance/PRIVATE-EVAL.md), [compliance matrix](assurance/COMPLIANCE.md) |
+| Public licence | [MIT](LICENSE), with [commercial delivery boundaries](LICENSING.md) |
+| Maturity | Pilot candidate; real customer deployment and private eval still required |
+
+## Frequently asked questions
+
+### Is this an OpenWebUI enterprise fork?
+
+This is an OpenCode coding-harness fork, not an OpenWebUI chat frontend.
+The supported interface is the Linux CLI/TUI.
+
+### Can I use vLLM with a private model?
+
+The target is one internal OpenAI-compatible Chat Completions endpoint behind an
+approved gateway. Actual model tool calling, streaming, cancellation and policy
+enforcement require customer validation. See the [gateway contract](enterprise-patches/GATEWAY-CONTRACT.md).
+
+### Can it run in an air-gapped environment?
+
+The deployment toolkit and signed-report verifier run offline. An air-gapped
+deployment also requires preloaded dependencies, internal registry and source transfer,
+identity services and tested network isolation. No air-gap certification is claimed.
+
+### What does the enterprise service include?
+
+Customer-specific builds, installation, agreed security evaluation, security patch
+delivery and private engineering support. Scope, prices and service levels are agreed
+privately. Existing public MIT rights remain intact. See [the enterprise offer](ENTERPRISE.md).
+
+### Does a signed eval report guarantee security?
+
+The verifier checks signed assertions bound to a specific profile and approved suite.
+It does not execute the private corpus or prove universal safety. Real environment
+evidence and independent customer approval remain required.
 
 ## Development and releases
 
