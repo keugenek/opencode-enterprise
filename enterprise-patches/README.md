@@ -95,8 +95,9 @@ worktree:
 (cd enterprise-patches && sha256sum -c SHA256SUMS)
 ```
 
-Результаты выше относятся к уже выполненной локальной проверке baseline. Этот
-README не заявляет наличие нового CI workflow или прохождение GitHub Actions.
+Результаты выше относятся к уже выполненной локальной проверке baseline. Эти
+локальные результаты не являются подтверждением прохождения GitHub Actions;
+статус нового workflow проверяйте во вкладке Actions.
 
 Не проверены: реальный vLLM, качество/tool calling выбранной модели, интерактивные
 сценарии TUI целиком, deployed CNI/network capture, image/SBOM scan, SSO, SIEM,
@@ -107,3 +108,49 @@ README не заявляет наличие нового CI workflow или пр
 Патчи сохранены без изменений относительно проверенного комплекта. Документы внутри
 патча 0004 отражают момент подготовки до публикации; актуальная инструкция для
 этого форка находится в данном README. SHA256SUMS проверяет комплект в этой папке.
+
+## CI/CD и релизные сборки
+
+Workflow: [Enterprise build and release](../.github/workflows/enterprise-release.yml).
+Он запускается на PR, изменяющих комплект/workflow, на соответствующих push в
+`dev`/`enterprise-patches` и на тегах `enterprise-v*`. Ручной `workflow_dispatch`
+доступен после появления workflow в default branch. Если GitHub отключил Actions
+для нового форка, включите их во вкладке Actions репозитория.
+
+Pipeline проверяет SHA256SUMS, создаёт отдельный worktree точного BASE_COMMIT,
+применяет четыре патча, устанавливает Bun 1.3.14 и зависимости по lockfile,
+запускает 32 направленных теста и typecheck трёх пакетов. Затем он собирает Linux
+x64/glibc (AVX2) CLI и проверяет бинарник: версия, игнорирование cloud config,
+отказ для auto/yolo flags и остановка без администраторской политики.
+Пример policy устанавливается только на одноразовый GitHub runner; реальные
+адреса и credentials компании в CI не требуются и в бинарник не встраиваются.
+
+Обычные сборки сохраняют артефакт `enterprise-linux-x64` на 14 дней. Тег вида
+`enterprise-v1.18.29-rc.1` создаёт GitHub **prerelease** только после успешной
+сборки и проверок. Публикация существующего релиза повторным запуском не перезаписывает
+его: используйте новый RC-тег. Не перемещайте опубликованные теги.
+
+Из проверенного checkout с этим workflow:
+
+```sh
+git tag -a enterprise-v1.18.29-rc.1 -m 'Enterprise candidate 1.18.29-rc.1'
+git push origin enterprise-v1.18.29-rc.1
+```
+
+Assets: архив бинарника с инструкцией и LICENSE, архив патчей, архив точных
+патченных исходников, `build-manifest.json` и `SHA256SUMS`. Manifest фиксирует
+коммит дистрибутива, baseline, tree hash исходников, версию Bun и хеши патчей/lockfile.
+SHA-256 подтверждает целостность скачанных файлов; это не криптографическая подпись
+издателя и не SBOM. Attestation/signing и сканирование конечного контейнера нужно
+добавить в корпоративном release процессе.
+
+Build job имеет только `contents: read`; публикация выполняется отдельным job с
+`contents: write` только для push релизного тега в этом форке. Actions закреплены
+по commit SHA, checkout не сохраняет token в Git-конфиге. Используются GitHub-hosted
+Ubuntu runners; сборка требует интернета для зависимостей. Для закрытого CI нужны
+одобренные зеркала и отдельный доверенный runner, недоступный непроверенным PR.
+
+Автоматического production deploy и stable-release promotion нет до выполнения
+[ACCEPTANCE.md](ACCEPTANCE.md). macOS/Windows/ARM и контейнерные образы данным
+workflow не выпускаются. Унаследованные upstream workflow — отдельные процессы;
+статус enterprise-сборки смотрите именно в `Enterprise build and release`.
