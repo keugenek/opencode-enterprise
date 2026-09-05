@@ -1,4 +1,19 @@
-# OpenCode Enterprise patch distribution
+# OpenCode Enterprise Distribution
+
+**A maintained coding-agent distribution for your internal AI infrastructure.**
+
+Our enterprise offering brings together maintained hardening patches, prebuilt
+distributions, automated build and regression checks, security review, security
+patch delivery and engineering support. The supported environment, update cadence,
+acceptance criteria and service commitments are agreed for each customer.
+
+**[Discuss enterprise licensing and deployment](mailto:evgeny.knyazev@gmail.com?subject=OpenCode%20Enterprise%20licensing)**
+with Eugene Kniazev · [Enterprise offering](ENTERPRISE.md) · [Licensing](LICENSING.md)
+
+Enterprise pricing and contract terms are provided privately following a discussion
+of your environment. This is an independent project, not built by or affiliated
+with the OpenCode team or Anomaly.
+
 
 This fork provides four reviewed `.patch` files for a restricted Linux CLI/TUI
 profile using one administrator-configured internal inference model.
