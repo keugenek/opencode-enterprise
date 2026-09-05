@@ -70,7 +70,7 @@ the supported profile. Revisit it after dependency/model/configuration changes.
 
 ## Private support and automated maintenance
 
-The planned internal maintenance service belongs in a separate private repository
+The planned internal maintenance service belongs in the operator's own private GitLab repository
 and segregated infrastructure. Its prompts, evaluators, customer reproductions and
 orchestration are not part of this public distribution. The following are design
 requirements for that service, not claims that it is already implemented:
@@ -81,6 +81,9 @@ requirements for that service, not claims that it is already implemented:
 - Run reproduction and proposed fixes in disposable isolated workers with least
   privilege. No production credentials, signing keys or customer deployment access.
   A bug report must not be able to instruct the worker to expand its permissions.
+- Implement common fixes and regressions in a clean public checkout, publish only after
+  data/rights clearance, and consume the merged public commit in GitLab. Customer-only
+  overlays and embargoed vulnerabilities follow [the development model](../community/DEVELOPMENT-MODEL.md).
 - Let automation propose a reviewed change and public regression. Do not expose the
   held-out eval corpus to the fixing agent or allow it to edit acceptance thresholds.
 - Upstream automation can open/update candidate changes on disposable integration

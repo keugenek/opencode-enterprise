@@ -39,3 +39,13 @@ provide customer-specific builds, future fixes, support or acceptance work.
 Contact [Eugene Kniazev](mailto:evgeny.knyazev@gmail.com?subject=OpenCode%20Enterprise%20licensing) for an enterprise distribution and an individually
 negotiated agreement. Prices and contract details are discussed privately.
 This notice is a description of licensing boundaries, not the customer agreement.
+
+## Public development and private delivery
+
+Common enterprise hardening patches, generic settings, build/CI tooling and public
+regressions are developed in the public repository under their applicable licences.
+Private GitLab consumes reviewed public commits; it does not impose new restrictions
+on those public components. Community participation does not require a support purchase.
+Customer-specific data, confidential eval, orchestration and separately identified
+private components are governed by their own rights, confidentiality and service terms.
+See [the development model](community/DEVELOPMENT-MODEL.md).

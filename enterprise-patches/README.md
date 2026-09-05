@@ -166,3 +166,11 @@ Kubernetes-манифесты и offline-проверка подписанног
 на синтетических данных. Сам закрытый eval выполняется в согласованной приватной
 среде и не входит в публичный workflow. См. [процесс security](../assurance/SECURITY-PROCESS.md),
 [контракт eval](../assurance/PRIVATE-EVAL.md) и [compliance](../assurance/COMPLIANCE.md).
+
+## Публичная разработка и обновления upstream
+
+Общие enterprise-патчи, настройки, CI и регрессии разрабатываются публично;
+приватный GitLab потребляет проверенный публичный commit. См.
+[contribution guide](../CONTRIBUTING.md), [границы кода и данных](../community/DEVELOPMENT-MODEL.md)
+и [проверку обновлений](../community/UPSTREAM.md). Серия расширяема: сейчас в ней
+четыре патча, новые изменения добавляются следующими номерами с обновлением checksums.

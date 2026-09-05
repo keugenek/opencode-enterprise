@@ -6,6 +6,9 @@ This playbook is not an executed contract or a production certificate.
 Keep completed customer records, commercial terms and internal maintenance technology
 in private systems. No customer environment is configured by adding these files.
 
+See [public/community engineering](../community/DEVELOPMENT-MODEL.md) and
+[private GitLab consumption](../community/GITLAB.md) for the source-of-truth boundary.
+
 ## Start here
 
 1. Agree scope and responsibility using [PILOT.md](PILOT.md).
@@ -25,6 +28,7 @@ in private systems. No customer environment is configured by adding these files.
 | Four patch files on exact v1.18.29 baseline | Implemented; application and matching source tree verified |
 | Directed regression tests, typechecks, Linux x64 build and smoke checks | Implemented; enterprise workflow previously passed |
 | Packaging, manifest and SHA-256 checks | Implemented |
+| Public upstream maintenance | Candidate applicability checker and extensible numbered series implemented; scheduler activates after merge to the default branch |
 | Tag-triggered GitHub prerelease job | Configured; actual tag publication not yet verified |
 | Kubernetes runtime / Dockerfile | Executable profile validation, verified binary image context and restricted per-workspace manifests in the MVP toolkit; customer deployment remains unverified |
 | Single-model gateway with workload identity | Required interface documented; not implemented here |

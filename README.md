@@ -1,4 +1,4 @@
-# OpenCode Enterprise — Self-Hosted AI Coding Agent
+# Independent Enterprise Distribution for OpenCode
 
 **Your code. Your model. Your infrastructure.**
 
@@ -11,7 +11,7 @@ The supported MVP is a Linux CLI/TUI coding harness with one administrator-contr
 model. Customer-managed vLLM is a target integration requiring real-model validation.
 
 [Deploy a pilot](mvp/README.md) · [Review hardening patches](enterprise-patches/patches/)
-· [Enterprise licensing and support](ENTERPRISE.md) · [Security process](assurance/SECURITY-PROCESS.md)
+· [Enterprise delivery and support](ENTERPRISE.md) · [Security process](assurance/SECURITY-PROCESS.md)
 
 A maintained OpenCode-based coding harness for internal inference and controlled
 remote developer workspaces. The enterprise service combines reviewed patches,
@@ -19,6 +19,23 @@ customer builds, deployment integration, security evaluation and ongoing support
 
 **[Discuss an enterprise pilot with Eugene Kniazev](mailto:evgeny.knyazev@gmail.com?subject=OpenCode%20Enterprise%20pilot)**
 · [Commercial offering](ENTERPRISE.md) · [Licensing](LICENSING.md)
+
+## Open engineering and supported customer delivery
+
+The common enterprise patches, generic configuration, CI/build tooling and regression
+suite are developed in this public repository. Community contributors can inspect,
+build, test and improve them under the applicable public licences. Customer delivery
+consumes exact public commits; sensitive data, private eval and remediation internals
+stay in the operator's own GitLab. General fixes start in public source, so normal
+work does not require backporting a private product fork into the community version.
+
+[Contribute a fix](CONTRIBUTING.md) · [Public/private development model](community/DEVELOPMENT-MODEL.md)
+· [GitLab consumption](community/GITLAB.md) · [Public upstream maintenance](community/UPSTREAM.md)
+
+Paid agreements cover supported environments, integration, private acceptance work,
+maintenance and response commitments. They do not restrict existing public MIT rights.
+The upstream has its own enterprise service; this independent offering is described in
+[ENTERPRISE.md](ENTERPRISE.md). Product branding remains under review.
 
 ## Start a controlled MVP pilot
 
@@ -79,7 +96,7 @@ network and access controls; an application policy alone is not a sandbox.
 
 | Field | Value |
 |---|---|
-| Product | OpenCode Enterprise, independent distribution by Eugene Kniazev |
+| Product | Independent OpenCode-based enterprise distribution by Eugene Kniazev; final brand pending |
 | Canonical repository | [keugenek/opencode-enterprise](https://github.com/keugenek/opencode-enterprise) |
 | Upstream | [anomalyco/opencode](https://github.com/anomalyco/opencode) |
 | Category | Self-hosted AI coding agent; enterprise coding harness; on-premises developer tooling |

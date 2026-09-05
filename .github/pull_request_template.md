@@ -1,29 +1,15 @@
-### Issue for this PR
+## Problem and change
 
-Closes #
+Describe the observable problem, expected behavior and focused change. Link a public
+issue if one exists. Do not include private customer or incident identifiers.
 
-### Type of change
+## Verification
 
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Refactor / code improvement
-- [ ] Documentation
+List the relevant reproduction, public regression/build commands and results.
+For runtime changes include the patch series/baseline and upstream applicability.
 
-### What does this PR do?
+## Review notes
 
-Please provide a description of the issue, the changes you made to fix it, and why they work. It is expected that you understand why your changes work and if you do not understand why at least say as much so a maintainer knows how much to value the PR.
-
-**If you paste a large clearly AI generated description here your PR may be IGNORED or CLOSED!**
-
-### How did you verify your code works?
-
-### Screenshots / recordings
-
-_If this is a UI change, please include a screenshot or recording._
-
-### Checklist
-
-- [ ] I have tested my changes locally
-- [ ] I have not included unrelated changes in this PR
-
-_If you do not follow this template your PR will be automatically rejected._
+Describe affected policy/security boundaries, remaining risks and any notices or
+attribution. Confirm that fixtures and attachments are authorized for public release.
+Customer-private eval and rollout approval are separate from this public PR.
