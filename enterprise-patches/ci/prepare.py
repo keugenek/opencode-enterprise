@@ -26,6 +26,10 @@ if len(names) != 4 or any(not re.fullmatch(r'000[1-4]-[a-z0-9-]+\.patch', n) for
     raise SystemExit('Expected the reviewed four-patch series')
 if len(set(names)) != 4 or names != sorted(names):
     raise SystemExit('Patch series is duplicated or out of order')
+if subprocess.run(['git', 'cat-file', '-e', baseline + '^{commit}'], cwd=root,
+                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
+    subprocess.run(['git', 'fetch', '--no-tags', 'https://github.com/anomalyco/opencode.git', baseline],
+                   cwd=root, check=True)
 subprocess.run(['git', 'cat-file', '-e', baseline + '^{commit}'], cwd=root, check=True)
 subprocess.run(['git', 'worktree', 'add', '--detach', str(target), baseline], cwd=root, check=True)
 subprocess.run(['git', '-c', 'user.name=Enterprise CI', '-c', 'user.email=ci@localhost',

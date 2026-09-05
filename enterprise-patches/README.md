@@ -16,6 +16,7 @@ Chat Completions endpoint и одна модель. Desktop, Web, ACP, обла�
 
 ```sh
 git fetch origin
+git fetch --no-tags https://github.com/anomalyco/opencode.git 16747470f976aca3d362ad730bcd3fe82ecc2c9a
 # Run from the repository root on the branch containing enterprise-patches/.
 patch_dir="$(pwd)/enterprise-patches/patches"
 git worktree add -b enterprise-runtime ../opencode-enterprise-runtime 16747470f976aca3d362ad730bcd3fe82ecc2c9a
@@ -118,7 +119,8 @@ Workflow: [Enterprise build and release](../.github/workflows/enterprise-release
 для нового форка, включите их во вкладке Actions репозитория.
 
 Pipeline проверяет SHA256SUMS, создаёт отдельный worktree точного BASE_COMMIT,
-применяет четыре патча, устанавливает Bun 1.3.14 и зависимости по lockfile,
+при необходимости загружает точный baseline SHA из upstream (release-коммит может
+отсутствовать в истории dev-форка), применяет четыре патча, устанавливает Bun 1.3.14 и зависимости по lockfile,
 запускает 32 направленных теста и typecheck трёх пакетов. Затем он собирает Linux
 x64/glibc (AVX2) CLI и проверяет бинарник: версия, игнорирование cloud config,
 отказ для auto/yolo flags и остановка без администраторской политики.
