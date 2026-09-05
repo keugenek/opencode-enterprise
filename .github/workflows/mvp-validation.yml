@@ -1,0 +1,36 @@
+name: Enterprise MVP tooling
+
+on:
+  pull_request:
+    paths:
+      - 'mvp/**'
+      - 'assurance/**'
+      - '.github/workflows/mvp-validation.yml'
+  push:
+    branches: [dev, enterprise-patches]
+    paths:
+      - 'mvp/**'
+      - 'assurance/**'
+      - '.github/workflows/mvp-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mvp-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Offline tooling and signature tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout distribution
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Test public tooling with synthetic fixtures
+        working-directory: mvp
+        run: python3 -m unittest discover -s tests -v

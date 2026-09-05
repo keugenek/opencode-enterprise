@@ -27,7 +27,9 @@ Retain build logs and hashes privately with the delivery record.
 
 ## 3. Prepare the customer image and policy
 
-Use [Dockerfile](../enterprise-patches/Dockerfile) as a starting point with an approved
+For the current executable pilot flow, use [MVP installation](../mvp/README.md),
+including persistent workspace/state and signed-report checks.
+Use [Dockerfile](../enterprise-patches/Dockerfile) as a lower-level starting point with an approved
 Linux runtime image by digest. Supply git, rg, bash, required project toolchain and
 customer CA roots. Include no live credentials, customer source or licence secrets
 in image layers.

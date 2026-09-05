@@ -27,8 +27,15 @@ shutil.copytree(source / 'enterprise', staging / 'enterprise')
 with tarfile.open(output / (name + '.tar.gz'), 'w:gz') as archive:
     archive.add(staging, arcname=name)
 shutil.rmtree(staging)
-with tarfile.open(output / 'enterprise-patches.tar.gz', 'w:gz') as archive:
-    archive.add(root / 'enterprise-patches', arcname='enterprise-patches')
+subprocess.run(['git', 'archive', '--format=tar.gz', '-o', str(output / 'enterprise-patches.tar.gz'),
+                'HEAD', 'enterprise-patches'], cwd=root, check=True)
+# Package only committed public paths: never sweep operator/customer working files
+# or test-generated keys and caches into a distributable archive.
+subprocess.run(['git', 'archive', '--format=tar.gz', '--prefix=opencode-enterprise-toolkit/',
+                '-o', str(output / 'enterprise-mvp-toolkit.tar.gz'), 'HEAD',
+                'mvp', 'assurance', 'delivery', 'enterprise-patches', 'README.md',
+                'ENTERPRISE.md', 'LICENSING.md', 'LICENSE', '.github/workflows/enterprise-release.yml',
+                '.github/workflows/mvp-validation.yml'], cwd=root, check=True)
 subprocess.run(['git', 'archive', '--format=tar.gz', '--prefix=opencode-enterprise-source/',
                 '-o', str(output / 'patched-source.tar.gz'), 'HEAD'], cwd=source, check=True)
 def git(path, ref):
@@ -44,7 +51,9 @@ manifest = {
     'lockfile_sha256': hashlib.sha256((source / 'bun.lock').read_bytes()).hexdigest(),
     'patch_sha256': {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in sorted((root / 'enterprise-patches/patches').glob('*.patch'))},
-    'production_acceptance': 'pending: actual vLLM, gateway, deployed network isolation and final image scan',
+    'production_acceptance': 'pending: signed private evaluation and customer approval of exact deployment',
+    'private_eval_execution': 'not run by public CI',
+    'mvp_toolkit': 'enterprise-mvp-toolkit.tar.gz',
 }
 (output / 'build-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
 files = sorted(p for p in output.iterdir() if p.is_file())

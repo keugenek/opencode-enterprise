@@ -156,3 +156,13 @@ Ubuntu runners; сборка требует интернета для завис
 [ACCEPTANCE.md](ACCEPTANCE.md). macOS/Windows/ARM и контейнерные образы данным
 workflow не выпускаются. Унаследованные upstream workflow — отдельные процессы;
 статус enterprise-сборки смотрите именно в `Enterprise build and release`.
+
+## MVP toolkit и процесс допуска
+
+Для нового пилота используйте [исполняемый MVP toolkit](../mvp/README.md):
+проверка профиля и бинарника, подготовка образа, отдельные persistent volumes,
+Kubernetes-манифесты и offline-проверка подписанного закрытого eval. В релизный
+набор добавлен `enterprise-mvp-toolkit.tar.gz`; public CI проверяет инструменты
+на синтетических данных. Сам закрытый eval выполняется в согласованной приватной
+среде и не входит в публичный workflow. См. [процесс security](../assurance/SECURITY-PROCESS.md),
+[контракт eval](../assurance/PRIVATE-EVAL.md) и [compliance](../assurance/COMPLIANCE.md).

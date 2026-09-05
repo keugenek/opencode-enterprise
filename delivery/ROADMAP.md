@@ -1,6 +1,9 @@
 # Delivery roadmap and implementation backlog
 
-Status: planning. Every unchecked item is outstanding until linked evidence exists.
+Status: pilot delivery backlog. The public MVP toolkit implements static profile
+validation, image-context preparation, restricted manifests and signed-report checks.
+Those are inputs to ENT-02/04/07; the corresponding customer integration and evidence
+are still outstanding until linked results exist.
 IDs can be copied into private project tickets; no public customer tickets are created
 by this document. Owners are roles from [PILOT.md](PILOT.md), not assigned individuals.
 

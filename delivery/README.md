@@ -1,7 +1,8 @@
 # Enterprise delivery playbook
 
 Public planning and operating templates for a paid, customer-specific deployment.
-This directory is not an installer, an executed contract or a production certificate.
+The executable installer preparation and report verifier are in [mvp/](../mvp/README.md).
+This playbook is not an executed contract or a production certificate.
 Keep completed customer records, commercial terms and internal maintenance technology
 in private systems. No customer environment is configured by adding these files.
 
@@ -19,20 +20,23 @@ in private systems. No customer environment is configured by adding these files.
 
 ## Current implementation boundary
 
-| Area | Status at playbook creation |
+| Area | Current implementation boundary |
 |---|---|
 | Four patch files on exact v1.18.29 baseline | Implemented; application and matching source tree verified |
 | Directed regression tests, typechecks, Linux x64 build and smoke checks | Implemented; enterprise workflow previously passed |
 | Packaging, manifest and SHA-256 checks | Implemented |
 | Tag-triggered GitHub prerelease job | Configured; actual tag publication not yet verified |
-| Kubernetes runtime / Dockerfile | Examples only; not a multi-user provisioner |
+| Kubernetes runtime / Dockerfile | Executable profile validation, verified binary image context and restricted per-workspace manifests in the MVP toolkit; customer deployment remains unverified |
 | Single-model gateway with workload identity | Required interface documented; not implemented here |
-| SSO access, per-developer provisioning, persistent storage and offboarding | Planned/customer integration required |
+| Persistent workspace/state | Per-workspace PVC manifests implemented; encrypted storage, backup and restore require customer verification |
+| SSO access, broker provisioning and offboarding | Customer integration required |
+| Private evaluation | Offline signed-report verifier and public process implemented; private corpus/runner, signer service and actual evaluation remain required |
 | Actual vLLM tool calling, network and cross-user isolation acceptance | Not yet completed |
 | Signing, SBOM and final image scanning | Required production work; not supplied by checksum generation |
 | Private automated remediation and upstream integration service | Planned; implementation belongs in a private repository |
 
-A documentation-only change does not rerun or extend the recorded software validation.
+The MVP tooling has its own public regression suite. Its synthetic reports do not
+establish private evaluation results or extend the patched CLI test coverage.
 Use the current Actions run for actual pipeline status.
 
 ## First deployment decision

@@ -21,6 +21,7 @@ is published here.
 | Automated build and validation | Patch application, regression tests, typechecks, binary builds and artifact integrity checks |
 | Security review | Review of the agreed release and deployment, documented findings and mitigation recommendations |
 | Security maintenance | Applicability assessment, agreed patch/backport work and tested update delivery |
+| Private acceptance evaluation | Customer-scoped adversarial, isolation, functionality and reliability evaluation with confidential evidence and independently signed results |
 | Deployment and support | Internal inference integration, acceptance assistance, troubleshooting and an agreed support channel |
 
 The contract defines which of these are included. Automated builds and tests are
@@ -68,6 +69,15 @@ web and other platforms are outside the current validated profile.
 See [technical instructions](enterprise-patches/README.md),
 [security review](enterprise-patches/SECURITY-REVIEW.md) and
 [acceptance gates](enterprise-patches/ACCEPTANCE.md).
+
+## Security assurance and the MVP
+
+Use the [MVP installation toolkit](mvp/README.md), [internal security process](assurance/SECURITY-PROCESS.md),
+[private evaluation contract](assurance/PRIVATE-EVAL.md) and [compliance evidence matrix](assurance/COMPLIANCE.md)
+to scope a controlled deployment. The public toolkit verifies signed reports; the private
+corpus, runner and signer service must be established for delivery. No completed
+customer evaluation or absolute safety guarantee is claimed. Acceptance is tied to
+the agreed build, model, environment and evaluation scope.
 
 ## Licensing
 

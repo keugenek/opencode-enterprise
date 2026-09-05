@@ -11,10 +11,16 @@ Distribution commit / upstream baseline / patched tree:
 Policy version / hash:
 Gateway, model/parser and network profile references:
 Storage/access profile:
+Canonical MVP profile SHA-256 / deployment integration revision:
+Approved private suite version / bundle SHA-256:
+Signed report identity / issued-at / expires-at:
+Trusted evaluator public-key fingerprint / independent reviewer:
 Execution date and private evidence location:
 
 | Check | Result | Evidence / owner / follow-up |
 |---|---|---|
+| All 13 private eval domains in ../../assurance/PRIVATE-EVAL.md | not run | Retain case coverage, thresholds, evidence and independent review |
+| Signature and exact profile/suite verification using mvpctl | not run | Record output and trusted key source; no substitution for raw evidence review |
 | All 12 gates in ../../enterprise-patches/ACCEPTANCE.md | not run | Copy each gate into the private evidence register; do not collapse failures |
 | Actual model: prompt, streaming tool call, approved edit/test, cancellation, compaction, subagent | not run | |
 | Developer A cannot access B's terminal, files, state or workload identity | not run | |
@@ -29,7 +35,7 @@ Execution date and private evidence location:
 | Internal audit attribution and diagnostic retention verified | not run | |
 | Private support report and escalation route exercised | not run | |
 | Agreed representative coding tasks meet customer-defined thresholds | not run | |
-| Signed delivery, SBOM/scanning and offline verification, where required | not run | |
+| Signed delivery, final-image SBOM/scanning and offline verification | not run | |
 
 Unresolved findings with severity, owner and target:
 Scope changes / excluded use cases:

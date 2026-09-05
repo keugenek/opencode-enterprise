@@ -4,12 +4,24 @@ on:
   pull_request:
     paths:
       - 'enterprise-patches/**'
+      - 'mvp/**'
+      - 'assurance/**'
+      - 'delivery/**'
+      - 'README.md'
+      - 'ENTERPRISE.md'
+      - 'LICENSING.md'
       - '.github/workflows/enterprise-release.yml'
   push:
     branches: [dev, enterprise-patches]
     tags: ['enterprise-v*']
     paths:
       - 'enterprise-patches/**'
+      - 'mvp/**'
+      - 'assurance/**'
+      - 'delivery/**'
+      - 'README.md'
+      - 'ENTERPRISE.md'
+      - 'LICENSING.md'
       - '.github/workflows/enterprise-release.yml'
   workflow_dispatch:
 
@@ -37,6 +49,9 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Test MVP tooling and signed-report validation
+        working-directory: mvp
+        run: python3 -m unittest discover -s tests -v
       - name: Select version
         env:
           BUILD_REF: ${{ github.ref }}
@@ -79,7 +94,7 @@ jobs:
         run: bun run script/build.ts --single --skip-install --skip-embed-web-ui
       - name: Smoke-test compiled binary and fail-closed guards
         run: bash enterprise-patches/ci/smoke.sh "$RUNNER_TEMP/patched-source/packages/opencode/dist/opencode-linux-x64/bin/opencode" "$OPENCODE_VERSION"
-      - name: Package binary, source, patch series and manifest
+      - name: Package binary, source, patch series, MVP toolkit and manifest
         run: python3 enterprise-patches/ci/package.py "$RUNNER_TEMP/patched-source" "$RUNNER_TEMP/release-assets"
       - name: Upload tested artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -122,8 +137,8 @@ jobs:
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
           Restricted OpenCode Linux x64/glibc (AVX2) CLI/TUI candidate.
 
-          Includes a compiled binary, patched source, the four-patch series, build manifest and SHA-256 checksums. Requires administrator-managed /etc/opencode/enterprise.json and an internal inference gateway.
+          Includes a compiled binary, patched source, the four-patch series, offline MVP installation toolkit and assurance process, build manifest and SHA-256 checksums. Requires administrator-managed /etc/opencode/enterprise.json and an internal inference gateway.
 
-          Tests, typechecks and compiled-binary smoke checks passed in this workflow. Actual vLLM inference, production gateway, deployed network isolation and final image/SBOM scanning remain acceptance gates. This prerelease is not production certification.
+          Patch tests, public MVP tooling tests, typechecks and compiled-binary smoke checks passed in this workflow. Private customer evaluation is not run in public CI. Actual vLLM inference, production gateway, deployed network isolation and final image/SBOM scanning remain acceptance gates. This prerelease is not production certification.
           NOTES
           gh release create "$RELEASE_TAG" ./* --verify-tag --prerelease --latest=false --title "OpenCode Enterprise $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
