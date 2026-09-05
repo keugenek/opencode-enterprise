@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "decision": "pending",
+  "subject": {
+    "profile_sha256": "",
+    "image": "",
+    "binary_sha256": ""
+  },
+  "issued_at": "",
+  "expires_at": "",
+  "suite_version": "",
+  "suite_sha256": "",
+  "evaluation_owner": "",
+  "unresolved_critical": null,
+  "unresolved_high": null,
+  "waivers": [],
+  "gates": {
+    "model_isolation": {
+      "status": "pending",
+      "executed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "evidence_sha256": ""
+    },
+    "egress_isolation": {
+      "status": "pending",
+      "executed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "evidence_sha256": ""
+    },
+    "workspace_isolation": {
+      "status": "pending",
+      "executed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "evidence_sha256": ""
+    },
+    "secret_isolation": {
+      "status": "pending",
+      "executed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "evidence_sha256": ""
+    },
+    "policy_integrity": {
+      "status": "pending",
+      "executed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "evidence_sha256": ""
+    },
+    "tool_permissions": {
+      "status": "pending",
+      "executed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "evidence_sha256": ""
+    },
+    "prompt_injection": {
+      "status": "pending",
+      "executed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "evidence_sha256": ""
+    },
+    "identity_revocation": {
+      "status": "pending",
+      "executed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "evidence_sha256": ""
+    },
+    "audit_retention": {
+      "status": "pending",
+      "executed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "evidence_sha256": ""
+    },
+    "restore_rollback": {
+      "status": "pending",
+      "executed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "evidence_sha256": ""
+    },
+    "supply_chain": {
+      "status": "pending",
+      "executed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "evidence_sha256": ""
+    },
+    "model_functionality": {
+      "status": "pending",
+      "executed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "evidence_sha256": ""
+    },
+    "reliability": {
+      "status": "pending",
+      "executed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "evidence_sha256": ""
+    }
+  }
+}

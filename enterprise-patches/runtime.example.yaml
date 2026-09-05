@@ -1,0 +1,91 @@
+# TEMPLATE: replace the image digest and gateway IP together with enterprise.example.json.
+# Apply NetworkPolicy BEFORE creating the Pod. CNI MUST enforce egress policies.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: enterprise-agents
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: opencode-isolation
+  namespace: enterprise-agents
+spec:
+  podSelector:
+    matchLabels:
+      app: opencode-enterprise
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.77.0.10/32
+      ports:
+        - protocol: TCP
+          port: 443
+# No general DNS allowance: prevent DNS exfiltration through an approved resolver.
+# Use a fixed, company-managed gateway IP; test service-NAT semantics on your CNI.
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: opencode-workspace
+  namespace: enterprise-agents
+  labels:
+    app: opencode-enterprise
+spec:
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  hostNetwork: false
+  hostPID: false
+  hostIPC: false
+  dnsPolicy: None
+  dnsConfig:
+    nameservers: [127.0.0.1]
+  hostAliases:
+    - ip: 10.77.0.10
+      hostnames: [inference.internal]
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: agent
+      image: registry.internal/opencode-enterprise@sha256:REPLACE_WITH_APPROVED_DIGEST
+      # Idle workspace for kubectl exec -it ... -- opencode; no service or inbound API.
+      command: [/bin/sleep, infinity]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+      resources:
+        requests:
+          cpu: '1'
+          memory: 2Gi
+        limits:
+          cpu: '4'
+          memory: 8Gi
+          ephemeral-storage: 10Gi
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: state
+          mountPath: /home/opencode
+        - name: tmp
+          mountPath: /tmp
+  volumes:
+    - name: workspace
+      emptyDir:
+        sizeLimit: 5Gi
+    - name: state
+      emptyDir:
+        sizeLimit: 2Gi
+    - name: tmp
+      emptyDir:
+        sizeLimit: 2Gi
