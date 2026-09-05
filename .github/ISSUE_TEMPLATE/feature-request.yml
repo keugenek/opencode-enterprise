@@ -1,19 +1,24 @@
-name: 🚀 Feature Request
-description: Suggest an idea, feature, or enhancement
-title: "[FEATURE]:"
-
+name: Distribution improvement
+description: Propose a common hardening, build, integration or documentation improvement.
 body:
-  - type: checkboxes
-    id: verified
-    attributes:
-      label: Feature hasn't been suggested before.
-      options:
-        - label: I have verified this feature I'm about to request hasn't been suggested before.
-          required: true
-
   - type: textarea
+    id: problem
     attributes:
-      label: Describe the enhancement you want to request
-      description: What do you want to change or add? What are the benefits of implementing this? Try to be detailed so we can understand your request better :)
+      label: Problem and supported use case
+      description: Explain the shared need without customer-confidential requirements.
     validations:
       required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior and acceptance
+      description: Include intended public tests, security boundaries and upstream applicability.
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Public scope
+      options:
+        - label: I have checked existing issues and can discuss this proposal publicly.
+          required: true

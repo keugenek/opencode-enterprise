@@ -1,113 +1,89 @@
-# Enterprise distributions, licensing and support
+# Supported enterprise delivery for OpenCode-based coding
 
-## Your models. Your infrastructure. A maintained distribution.
+**Public engineering. Customer-specific assurance and operations.**
 
-Deploy an OpenCode-based coding harness around your internal inference service,
-with an agreed configuration and a maintained patch set. Work directly with
-Eugene Kniazev to scope the build, deployment and ongoing support your organisation needs.
+We maintain an independent OpenCode-based distribution for internal inference and
+controlled developer workspaces. General hardening patches, configuration schemas,
+CI/build tooling and regressions are developed publicly. Customers buy the work and
+commitments required to deploy, accept and maintain that software in their environment.
 
-**[Contact Eugene about enterprise licensing](mailto:evgeny.knyazev@gmail.com?subject=OpenCode%20Enterprise%20licensing)**
+**[Discuss a paid pilot with Eugene Kniazev](mailto:evgeny.knyazev@gmail.com?subject=Enterprise%20coding%20deployment)**
 
-Prices, licence terms, delivery milestones and support commitments are negotiated
-privately for each customer. No public price list or standard customer contract
-is published here.
+## Public project and paid delivery
 
-## What the enterprise offering covers
-
-| Area | Scope available by agreement |
+| Available publicly under applicable licences | Available through a customer agreement |
 |---|---|
-| Maintained enterprise patches | Configuration controls, provider/model restrictions and removal or disabling of unwanted remote features |
-| Prebuilt distributions | Customer-specific build configuration, versioned artifacts and deployment documentation |
-| Automated build and validation | Patch application, regression tests, typechecks, binary builds and artifact integrity checks |
-| Security review | Review of the agreed release and deployment, documented findings and mitigation recommendations |
-| Security maintenance | Applicability assessment, agreed patch/backport work and tested update delivery |
-| Private acceptance evaluation | Customer-scoped adversarial, isolation, functionality and reliability evaluation with confidential evidence and independently signed results |
-| Deployment and support | Internal inference integration, acceptance assistance, troubleshooting and an agreed support channel |
+| Common enterprise hardening patches and fixes | Agreed supported build, model, environment and maintenance period |
+| Generic policy/configuration schemas and sanitized defaults | Installation, private runtime configuration and infrastructure integration |
+| Build/release automation and directed regression tests | Final customer image review, provenance/signing and controlled delivery work |
+| Security process, findings and report-verification contract | Confidential deployment evaluation, evidence review and acceptance assistance |
+| Community contributions, public issue/PR review and candidate artifacts | Private support intake, diagnosis, agreed response targets and patch/backport delivery |
+| General updates developed in one public source tree | Customer rollout planning, compatibility assessment and rollback assistance |
 
-The contract defines which of these are included. Automated builds and tests are
-implemented; fully automated vulnerability remediation, unrestricted backport
-coverage and 24/7 incident response are not implied. An SLA, update cadence or
-supported-version period applies only if expressly agreed.
+Payment funds accountable engineering and customer-specific service. Public software
+rights do not depend on buying support. A community contribution is not automatically
+subject to a commercial restriction, and a public CI candidate is not automatically a
+contractually supported customer release. Prices, contracts and service levels are
+negotiated privately; no public price list or unlimited support/fix promise is implied.
 
-## Private issue reporting and maintained releases
+## How a customer bug becomes a shared improvement
 
-Customers can submit bug reports through the private channel agreed in their
-contract. For the supported configuration, the maintenance process covers triage,
-reproduction where possible, prioritisation, regression testing and delivery of
-an accepted fix or documented workaround through the agreed release channel.
-Response targets and release schedules are contractual; submission does not
-guarantee that every request will be fixed or become a product feature.
+Sensitive reports, reproductions and acceptance evidence stay in the customer's or
+supplier's own private GitLab. With the necessary permission, we create a synthetic
+public reproduction and implement the common fix plus regression directly in this
+public repository. Private delivery then consumes the reviewed public commit and
+re-runs its acceptance checks. There is no normal second private fork of the common
+harness to reconcile back into the community project.
 
-Customer source and diagnostic data are kept separate from public upstream
-contributions. Sending customer-derived material upstream requires the customer's
-permission. General fixes can be contributed upstream when rights and disclosure
-requirements allow. Updates to a customer's deployed environment follow that
-customer's approval process.
+A confidential vulnerability may require a temporary security branch until coordinated
+disclosure. Customer-only adapters and business tooling can remain private; reusable
+core fixes belong in the public source. See [development boundaries](community/DEVELOPMENT-MODEL.md)
+and [private GitLab integration](community/GITLAB.md).
 
-## Public evaluation and customer delivery
+## What stays confidential
 
-The public repository contains an inspectable patch series, security review,
-deployment examples and CI tooling. These let engineering teams evaluate the
-approach before commissioning a supported distribution.
+Customer code, prompts, traces, internal endpoints, actual deployment settings, support
+records, contracts, private eval cases/scoring/results and remediation orchestration.
+Signing keys and production credentials remain in protected secret/signing services,
+not in Git repositories. Public CI has no access to private GitLab or customer systems.
 
-Customer delivery can include a release/configuration manifest, prebuilt artifacts,
-agreed acceptance results, deployment runbooks and maintenance coverage.
-A publicly downloadable CI artifact is not, by itself, a customer-accepted or
-contractually supported enterprise release.
+The private remediation service is planned delivery infrastructure; publication of this
+offer does not assert it is already implemented. Its workers may propose public fixes,
+but they do not gain production, signing or unrestricted publication authority.
 
-## Current technical scope
+## Current delivery scope
 
-The current candidate targets Linux x64 CLI/TUI with one administrator-controlled
-internal OpenAI-compatible inference endpoint/model. It disables the reviewed
-remote telemetry, sharing and cloud entry points in that supported profile.
+The MVP candidate targets Linux x64/glibc AVX2 CLI/TUI, one administrator-controlled
+internal OpenAI-compatible model and an existing customer workspace/access platform.
+The public patch/build pipeline and offline deployment/report-verification toolkit are
+implemented. Actual vLLM compatibility, effective gateway/network/tenant isolation,
+identity lifecycle, final-image evidence and private eval execution remain customer
+acceptance work. No completed confidential eval or compliance certification is claimed.
 
-Real vLLM compatibility, gateway policy, operating-system/network isolation and
-final deployment acceptance must be verified for the customer's environment.
-This is not a blanket air-gap or regulatory-compliance certification. Desktop,
-web and other platforms are outside the current validated profile.
+Our differentiation is the scoped deployment, reviewed hardening, real-environment
+acceptance and maintained delivery. Upstream already offers centralized configuration,
+SSO and internal-gateway integration; those general capabilities are not claimed as
+unique here. See [upstream enterprise documentation](https://opencode.ai/docs/enterprise/).
 
-See [technical instructions](enterprise-patches/README.md),
-[security review](enterprise-patches/SECURITY-REVIEW.md) and
-[acceptance gates](enterprise-patches/ACCEPTANCE.md).
+Start with [the pilot scope](delivery/PILOT.md), [MVP installation](mvp/README.md),
+[security process](assurance/SECURITY-PROCESS.md), [private eval contract](assurance/PRIVATE-EVAL.md)
+and [compliance evidence matrix](assurance/COMPLIANCE.md).
 
-## Security assurance and the MVP
+## Licensing and identity
 
-Use the [MVP installation toolkit](mvp/README.md), [internal security process](assurance/SECURITY-PROCESS.md),
-[private evaluation contract](assurance/PRIVATE-EVAL.md) and [compliance evidence matrix](assurance/COMPLIANCE.md)
-to scope a controlled deployment. The public toolkit verifies signed reports; the private
-corpus, runner and signer service must be established for delivery. No completed
-customer evaluation or absolute safety guarantee is claimed. Acceptance is tied to
-the agreed build, model, environment and evaluation scope.
+The root [MIT licence](LICENSE) and existing public grants remain intact. Customer
+agreements define service obligations and any explicitly identified, separately
+licensed supplier-owned components. Private hosting alone does not change a component's
+licence. See [LICENSING.md](LICENSING.md).
 
-## Licensing
+Independent project maintained by [@keugenek](https://github.com/keugenek), not affiliated
+with or endorsed by the OpenCode team or Anomaly. "OpenCode" identifies the upstream
+technology; a separate product-brand decision remains open. This offer is not the
+upstream's official OpenCode Enterprise service.
 
-Enterprise deliveries and services are scoped under an individually negotiated
-agreement. That agreement identifies any separately licensed, supplier-owned
-components and the rights granted for them. Existing open-source components and
-previously published MIT versions retain their applicable licences; acquiring
-support is not a prerequisite for exercising those rights.
+## Start a conversation
 
-See [licensing boundaries](LICENSING.md). This page describes the commercial
-offering; it is not an executed software licence or a support contract.
-
-## Deployment planning
-
-See the [delivery playbook](delivery/README.md) for the proposed paid pilot,
-operator procedure, developer access lifecycle, acceptance records and maintenance
-process. Templates describe required work; they do not assert that identity,
-provisioning or production acceptance is already implemented.
-
-## Start a discussion
-
-**[Email Eugene Kniazev](mailto:evgeny.knyazev@gmail.com?subject=OpenCode%20Enterprise%20licensing)** with your organisation, target environment,
-internal model/gateway, approximate deployment size and desired support scope.
-A high-level description is enough initially. Share sensitive architecture,
-credentials, source code or vulnerability details only through an agreed secure
-channel.
-
-We can then agree an evaluation scope, acceptance criteria and a customer-specific
-commercial proposal. No mandatory external licence callback is introduced by this
-public offering.
-
-Independent project maintained by [@keugenek](https://github.com/keugenek).
-Not affiliated with or endorsed by the OpenCode team or Anomaly.
+Email your organization, high-level environment, internal inference setup, approximate
+cohort and desired support scope. Establish an agreed secure channel before sending
+sensitive material. We can then agree a pilot, evidence requirements and a customer-specific
+commercial proposal. No mandatory external licence callback is introduced.

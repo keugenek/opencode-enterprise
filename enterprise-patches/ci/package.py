@@ -34,7 +34,8 @@ subprocess.run(['git', 'archive', '--format=tar.gz', '-o', str(output / 'enterpr
 subprocess.run(['git', 'archive', '--format=tar.gz', '--prefix=opencode-enterprise-toolkit/',
                 '-o', str(output / 'enterprise-mvp-toolkit.tar.gz'), 'HEAD',
                 'mvp', 'assurance', 'delivery', 'enterprise-patches', 'README.md',
-                'ENTERPRISE.md', 'LICENSING.md', 'LICENSE', '.github/workflows/enterprise-release.yml',
+                'ENTERPRISE.md', 'LICENSING.md', 'LICENSE', 'CONTRIBUTING.md', 'community',
+                '.github/workflows/upstream-check.yml', '.github/workflows/enterprise-release.yml',
                 '.github/workflows/mvp-validation.yml'], cwd=root, check=True)
 subprocess.run(['git', 'archive', '--format=tar.gz', '--prefix=opencode-enterprise-source/',
                 '-o', str(output / 'patched-source.tar.gz'), 'HEAD'], cwd=source, check=True)

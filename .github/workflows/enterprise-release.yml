@@ -7,6 +7,8 @@ on:
       - 'mvp/**'
       - 'assurance/**'
       - 'delivery/**'
+      - 'community/**'
+      - 'CONTRIBUTING.md'
       - 'README.md'
       - 'ENTERPRISE.md'
       - 'LICENSING.md'
@@ -19,6 +21,8 @@ on:
       - 'mvp/**'
       - 'assurance/**'
       - 'delivery/**'
+      - 'community/**'
+      - 'CONTRIBUTING.md'
       - 'README.md'
       - 'ENTERPRISE.md'
       - 'LICENSING.md'
@@ -49,6 +53,9 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Test patch maintenance and upstream candidate tooling
+        working-directory: enterprise-patches/ci
+        run: python3 -m unittest discover -s tests -v
       - name: Test MVP tooling and signed-report validation
         working-directory: mvp
         run: python3 -m unittest discover -s tests -v

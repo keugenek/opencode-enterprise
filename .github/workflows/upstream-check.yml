@@ -1,0 +1,58 @@
+name: Public upstream maintenance
+
+on:
+  schedule:
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'enterprise-patches/**'
+      - 'community/**'
+      - '.github/workflows/upstream-check.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Patch maintenance regression tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout public distribution
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Verify public package inventory
+        run: python3 enterprise-patches/ci/series.py
+      - name: Test candidate and conflict handling
+        working-directory: enterprise-patches/ci
+        run: python3 -m unittest discover -s tests -v
+
+  candidate:
+    name: Check latest stable upstream
+    needs: validate
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout public distribution
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Resolve release and check patch applicability
+        run: python3 enterprise-patches/ci/upstream.py --output "$RUNNER_TEMP/upstream-candidate"
+      - name: Upload public report and optional baseline update
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: upstream-candidate
+          path: |
+            ${{ runner.temp }}/upstream-candidate/report.json
+            ${{ runner.temp }}/upstream-candidate/candidate.patch
+          if-no-files-found: warn
+          retention-days: 30

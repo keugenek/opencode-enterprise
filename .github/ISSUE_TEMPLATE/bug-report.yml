@@ -1,66 +1,44 @@
-name: Bug report
-description: Report an issue that should be fixed (avoid pasting giant AI generated summaries or your issue may be closed/ignored)
+name: Distribution bug
+description: Report a reproducible, non-sensitive bug in the public enterprise distribution.
 body:
-  - type: textarea
-    id: description
+  - type: markdown
     attributes:
-      label: Description
-      description: Describe the bug you encountered
-      placeholder: What happened?
+      value: |
+        This issue is public. Do not use /share or include customer code, logs, prompts,
+        screenshots, internal endpoints, credentials or private eval cases.
+        Use the agreed private channel for customer incidents or vulnerabilities.
+  - type: checkboxes
+    id: public-data
+    attributes:
+      label: Public reproduction
+      options:
+        - label: This report contains only material I am authorized to publish and no sensitive customer data.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: Distribution commit or release
+      description: Include the public upstream baseline and patch identity when available.
     validations:
       required: true
-
-  - type: input
-    id: plugins
+  - type: textarea
+    id: environment
     attributes:
-      label: Plugins
-      description: What plugins are you using?
+      label: Non-sensitive environment
+      description: OS/architecture, tool versions and generic deployment profile; omit private network details.
     validations:
-      required: false
-
-  - type: input
-    id: opencode-version
-    attributes:
-      label: OpenCode version
-      description: What version of OpenCode are you using?
-    validations:
-      required: false
-
+      required: true
   - type: textarea
     id: reproduce
     attributes:
-      label: Steps to reproduce
-      description: How can we reproduce this issue?
-      placeholder: |
-        1.
-        2.
-        3.
+      label: Minimal synthetic reproduction
+      description: Steps or a small public fixture, expected result and observed result.
     validations:
-      required: false
-
+      required: true
   - type: textarea
-    id: screenshot-or-link
+    id: evidence
     attributes:
-      label: Screenshot and/or share link
-      description: Run `/share` to get a share link, or attach a screenshot
-      placeholder: Paste link or drag and drop screenshot here
-    validations:
-      required: false
-
-  - type: input
-    id: os
-    attributes:
-      label: Operating System
-      description: what OS are you using?
-      placeholder: e.g., macOS 26.0.1, Ubuntu 22.04, Windows 11
-    validations:
-      required: false
-
-  - type: input
-    id: terminal
-    attributes:
-      label: Terminal
-      description: what terminal are you using?
-      placeholder: e.g., iTerm2, Ghostty, Alacritty, Windows Terminal
+      label: Public verification and possible fix
+      description: Relevant test command/output using synthetic data and any upstream issue reference.
     validations:
       required: false

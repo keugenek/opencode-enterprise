@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 💬 Discord Community
-    url: https://discord.gg/opencode
-    about: For support, troubleshooting, how-to questions, and real-time discussion.
+  - name: Private security reporting
+    url: https://github.com/keugenek/opencode-enterprise/blob/dev/assurance/REPORTING.md
+    about: Establish a secure channel before sharing vulnerability or customer-confidential details.
+  - name: Enterprise delivery and support
+    url: https://github.com/keugenek/opencode-enterprise/blob/dev/ENTERPRISE.md
+    about: Customer-specific deployment and support scope are agreed privately.

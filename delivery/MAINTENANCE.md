@@ -39,9 +39,18 @@ explicit agreement of scope and processing arrangements.
 Require a reproduction or clear diagnostic evidence and a regression check for a fix.
 The fixer must not approve its own removal/weakening of independent acceptance gates.
 Signing and customer deployment credentials remain outside the repair environment.
-Customer-specific changes are tracked separately from the public baseline/patch series.
+Common fixes and regressions are authored in a clean public checkout and reviewed in
+public PRs after reproduction/data clearance. Private GitLab consumes their exact merged
+commits. Customer-only adapters stay in a thin private overlay; do not copy common
+runtime modules into a private product branch. Confidential vulnerabilities use a
+temporary embargo branch and coordinated disclosure. See
+[the public development model](../community/DEVELOPMENT-MODEL.md).
 
 ## Upstream updates
+
+Use the [public candidate checker](../community/UPSTREAM.md) as the common update path.
+GitLab consumes its reviewed public outcome rather than maintaining another upstream merge.
+
 
 1. Pin the candidate upstream commit and record licence/dependency/configuration diffs.
 2. Apply the maintained patch series in an integration branch and check every hunk.
