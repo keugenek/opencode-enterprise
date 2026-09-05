@@ -1,0 +1,79 @@
+{
+  "template_version": "1",
+  "status": "UNCONFIGURED_EXAMPLE_NOT_DEPLOYABLE",
+  "handling": "Complete and store privately; do not commit customer details or secrets",
+  "commercial": {
+    "private_scope_reference": null,
+    "private_license_reference": null,
+    "supported_component_list_reference": null,
+    "support_start": null,
+    "support_end": null,
+    "private_support_channel": null
+  },
+  "owners": {
+    "supplier_release_owner": null,
+    "customer_platform_owner": null,
+    "customer_security_owner": null,
+    "customer_model_owner": null,
+    "customer_developer_lead": null
+  },
+  "scope": {
+    "mode": "evaluation",
+    "pilot_developer_count": null,
+    "concurrent_session_target": null,
+    "project_toolchain_reference": null,
+    "architecture": "linux-x64-glibc-avx2",
+    "runtime_kind": null,
+    "network_mode": null
+  },
+  "release": {
+    "distribution_commit": null,
+    "baseline_commit": "16747470f976aca3d362ad730bcd3fe82ecc2c9a",
+    "patched_tree": null,
+    "image_digest": null,
+    "signature_verification_reference": null,
+    "sbom_and_scan_reference": null,
+    "policy_sha256": null
+  },
+  "inference": {
+    "baseURL": "https://inference.example.invalid/v1",
+    "model": "REPLACE_WITH_APPROVED_MODEL",
+    "context": null,
+    "output": null,
+    "workload_identity_reference": null,
+    "parser_template_reference": null,
+    "quota_reference": null
+  },
+  "access": {
+    "corporate_identity_group_reference": null,
+    "workspace_broker_reference": null,
+    "developer_access_instructions_reference": null,
+    "revocation_target_minutes": null
+  },
+  "storage": {
+    "persistence_mode": null,
+    "per_workspace_storage_reference": null,
+    "backup_reference": null,
+    "restore_target_reference": null,
+    "retention_reference": null
+  },
+  "network": {
+    "effective_policy_reference": null,
+    "approved_runtime_destinations": [],
+    "source_import_reference": null,
+    "change_export_reference": null,
+    "dependency_provisioning_reference": null
+  },
+  "acceptance": {
+    "record_reference": null,
+    "decision": "not_started",
+    "evidence_reference": null,
+    "business_thresholds_reference": null
+  },
+  "operations": {
+    "audit_reference": null,
+    "update_window": null,
+    "rollback_reference": null,
+    "incident_response_reference": null
+  }
+}

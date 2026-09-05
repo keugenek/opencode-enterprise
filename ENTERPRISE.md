@@ -80,6 +80,13 @@ support is not a prerequisite for exercising those rights.
 See [licensing boundaries](LICENSING.md). This page describes the commercial
 offering; it is not an executed software licence or a support contract.
 
+## Deployment planning
+
+See the [delivery playbook](delivery/README.md) for the proposed paid pilot,
+operator procedure, developer access lifecycle, acceptance records and maintenance
+process. Templates describe required work; they do not assert that identity,
+provisioning or production acceptance is already implemented.
+
 ## Start a discussion
 
 **[Email Eugene Kniazev](mailto:evgeny.knyazev@gmail.com?subject=OpenCode%20Enterprise%20licensing)** with your organisation, target environment,

@@ -20,6 +20,7 @@ profile using one administrator-configured internal inference model.
 **The patches must be applied to v1.18.29 before building; their presence in this
 branch does not enable enterprise restrictions in the upstream source tree.**
 
+- [Enterprise delivery plan and developer rollout](delivery/README.md)
 - [CI/CD and tagged prereleases](enterprise-patches/README.md#cicd-и-релизные-сборки)
 - [Apply the patches and build](enterprise-patches/README.md)
 - [Four patch files and series order](enterprise-patches/patches/)
