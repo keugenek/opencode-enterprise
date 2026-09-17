@@ -78,6 +78,8 @@ claimed. The private corpus and remediation implementation are not included here
 
 ## Windows and deployment topology
 
+![Enterprise deployment: VPN, proxy, LLM router, shared plan and isolated caches](delivery/diagrams/deployment.png)
+
 Native Windows x64 CLI/TUI support is supplied by patch 0005 and the
 `Test and build Windows x64` job. Download `enterprise-windows-x64` only from a
 successful run. The ZIP contains administrator installation instructions; Windows

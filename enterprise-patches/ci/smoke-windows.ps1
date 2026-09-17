@@ -19,6 +19,7 @@ function Invoke-Check([string[]]$Arguments, [bool]$Allowed, [string]$Expected) {
   $ErrorActionPreference = $savedPreference
   if (($code -eq 0) -ne $Allowed) { throw "Unexpected exit $code for $Arguments : $output" }
   if ($Expected -and $output -notmatch [regex]::Escape($Expected)) { throw "Missing expected response '$Expected': $output" }
+  if ($Allowed -and $Arguments[0] -eq 'models' -and $output -ne $Expected) { throw "Unexpected model list: $output" }
   $script:checks++
 }
 try {

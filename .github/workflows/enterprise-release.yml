@@ -219,7 +219,7 @@ jobs:
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
           Restricted OpenCode Linux x64/glibc (AVX2) CLI/TUI candidate.
 
-          Includes a compiled binary, patched source, the four-patch series, offline MVP installation toolkit and assurance process, build manifest and SHA-256 checksums. Requires administrator-managed /etc/opencode/enterprise.json and an internal inference gateway.
+          Includes a compiled binary, patched source, the reviewed patch series, offline MVP installation toolkit and assurance process, build manifest and SHA-256 checksums. Requires administrator-managed /etc/opencode/enterprise.json and an internal inference gateway.
 
           Patch tests, public MVP tooling tests, typechecks and compiled-binary smoke checks passed in this workflow. Private customer evaluation is not run in public CI. Actual vLLM inference, production gateway, deployed network isolation and final image/SBOM scanning remain acceptance gates. This prerelease is not production certification.
           NOTES

@@ -1,4 +1,4 @@
-From 869520ef7b984342256d9d30fd18caa9fc4462ca Mon Sep 17 00:00:00 2001
+From e576ad74b6e71d85a3ec645e6299d554fde5c28e Mon Sep 17 00:00:00 2001
 From: Enterprise CI <ci@localhost>
 Date: Thu, 17 Sep 2026 14:53:13 +0200
 Subject: [PATCH] feat(enterprise): support administrator-managed Windows
@@ -8,8 +8,8 @@ Subject: [PATCH] feat(enterprise): support administrator-managed Windows
  enterprise/windows/README.md            | 69 +++++++++++++++++++++++++
  enterprise/windows/install.ps1          | 34 ++++++++++++
  packages/core/src/enterprise/policy.ts  |  8 +--
- packages/core/src/enterprise/windows.ts | 58 +++++++++++++++++++++
- 4 files changed, 166 insertions(+), 3 deletions(-)
+ packages/core/src/enterprise/windows.ts | 60 +++++++++++++++++++++
+ 4 files changed, 168 insertions(+), 3 deletions(-)
  create mode 100644 enterprise/windows/README.md
  create mode 100644 enterprise/windows/install.ps1
  create mode 100644 packages/core/src/enterprise/windows.ts
@@ -158,10 +158,10 @@ index 6958e55..39101d2 100644
      if (stat.isSymbolicLink() || stat.uid !== 0 || (stat.mode & 0o022) !== 0)
 diff --git a/packages/core/src/enterprise/windows.ts b/packages/core/src/enterprise/windows.ts
 new file mode 100644
-index 0000000..aabf3ed
+index 0000000..87ba536
 --- /dev/null
 +++ b/packages/core/src/enterprise/windows.ts
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,60 @@
 +import { execFileSync } from "node:child_process"
 +
 +// Deliberately fixed: neither environment variables nor project configuration
@@ -169,8 +169,9 @@ index 0000000..aabf3ed
 +export const file = String.raw`C:\Program Files\OpenCode Enterprise\enterprise.json`
 +const script = String.raw`
 +$ErrorActionPreference = 'Stop'
++$PSModuleAutoLoadingPreference = 'None'
 +try {
-+  [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
++  [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 +  $trusted = @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
 +  $paths = @('C:\', 'C:\Program Files', 'C:\Program Files\OpenCode Enterprise', 'C:\Program Files\OpenCode Enterprise\enterprise.json')
 +  foreach ($path in $paths) {
@@ -195,7 +196,7 @@ index 0000000..aabf3ed
 +      if ([long]$rule.FileSystemRights -band $mask) { throw 'Policy path grants untrusted write or replacement rights' }
 +    }
 +  }
-+  $info = New-Object IO.FileInfo($paths[3])
++  $info = [IO.FileInfo]::new($paths[3])
 +  if ($info.Length -gt 16384) { throw 'Policy exceeds 16 KiB' }
 +  [Console]::Write([IO.File]::ReadAllText($paths[3], [Text.Encoding]::UTF8))
 +} catch {
@@ -212,6 +213,7 @@ index 0000000..aabf3ed
 +      cwd: String.raw`C:\Windows\System32`,
 +      env: { SystemRoot: String.raw`C:\Windows`, WINDIR: String.raw`C:\Windows` },
 +      encoding: "utf8",
++      stdio: ["ignore", "pipe", "pipe"],
 +      timeout: 10000,
 +      maxBuffer: 65536,
 +      windowsHide: true,

@@ -8,6 +8,11 @@ are customer infrastructure / private integration work, not deployed by this rep
 The existing CLI has one OpenAI-compatible endpoint and does not implement a
 shared-planning API, SSO client or a general-purpose model router.
 
+![Deployment architecture](diagrams/deployment.png)
+
+PNG source: `diagrams/render.py` (Matplotlib); regenerate with
+`python3 delivery/diagrams/render.py` from the repository root.
+
 ## Inference and trust boundaries
 
 ```mermaid
