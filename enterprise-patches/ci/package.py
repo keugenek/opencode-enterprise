@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Package the tested binary and record the exact source and patch identity."""
 import hashlib
+import zipfile
 import json
 import os
 import pathlib
@@ -17,15 +18,25 @@ version = os.environ['OPENCODE_VERSION']
 if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?', version):
     raise SystemExit('Invalid artifact version')
 output.mkdir(parents=True, exist_ok=False)
-name = f'opencode-enterprise-{version}-linux-x64'
+target = os.environ.get('ENTERPRISE_TARGET', 'linux-x64')
+if target not in ('linux-x64', 'windows-x64'):
+    raise SystemExit('Unsupported enterprise target')
+windows = target == 'windows-x64'
+executable = 'opencode.exe' if windows else 'opencode'
+name = f'opencode-enterprise-{version}-{target}'
 staging = output / name
 staging.mkdir()
-shutil.copy2(source / 'packages/opencode/dist/opencode-linux-x64/bin/opencode', staging / 'opencode')
+shutil.copy2(source / f'packages/opencode/dist/opencode-{target}/bin' / executable, staging / executable)
 shutil.copy2(source / 'LICENSE', staging / 'LICENSE')
 shutil.copytree(source / 'enterprise', staging / 'enterprise')
-(staging / 'INSTALL.txt').write_text('Linux x64/glibc (AVX2). Requires an administrator-installed /etc/opencode/enterprise.json.\nRead enterprise/README.md and ACCEPTANCE.md. No endpoint credentials are embedded.\nThis prerelease has not passed production vLLM/network acceptance gates.\n')
-with tarfile.open(output / (name + '.tar.gz'), 'w:gz') as archive:
-    archive.add(staging, arcname=name)
+(staging / 'INSTALL.txt').write_text('Windows x64 AVX2. Read enterprise/windows/README.md. Administrator-managed NTFS policy required.\n' if windows else 'Linux x64/glibc (AVX2). Requires an administrator-installed /etc/opencode/enterprise.json.\nRead enterprise/README.md and ACCEPTANCE.md. No endpoint credentials are embedded.\nThis prerelease has not passed production vLLM/network acceptance gates.\n')
+if windows:
+    with zipfile.ZipFile(output / (name + '.zip'), 'w', zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(staging.rglob('*')):
+            if path.is_file(): archive.write(path, path.relative_to(output))
+else:
+    with tarfile.open(output / (name + '.tar.gz'), 'w:gz') as archive:
+        archive.add(staging, arcname=name)
 shutil.rmtree(staging)
 subprocess.run(['git', 'archive', '--format=tar.gz', '-o', str(output / 'enterprise-patches.tar.gz'),
                 'HEAD', 'enterprise-patches'], cwd=root, check=True)
@@ -47,7 +58,7 @@ manifest = {
     'baseline_commit': (root / 'enterprise-patches/BASE_COMMIT').read_text().strip(),
     'patched_source_tree': git(source, 'HEAD^{tree}'),
     'bun_version': subprocess.check_output(['bun', '--version']).decode().strip(),
-    'target': 'linux-x64-glibc-avx2',
+    'target': 'windows-x64-avx2' if windows else 'linux-x64-glibc-avx2',
     'workflow_run': os.environ.get('GITHUB_RUN_ID'),
     'lockfile_sha256': hashlib.sha256((source / 'bun.lock').read_bytes()).hexdigest(),
     'patch_sha256': {p.name: hashlib.sha256(p.read_bytes()).hexdigest()

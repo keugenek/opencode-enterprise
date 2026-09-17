@@ -71,3 +71,18 @@ CLI проигнорировал внедрённый облачный конф�
 фиксированный endpoint/model, remote media и no-op telemetry. Они не являются
 пакетным захватом трафика и не доказывают изоляцию runtime. Production rollout
 заблокирован до прохождения перечисленных release gates.
+
+## Windows port review scope — 2026-09-17
+
+Patch 0005 adds a fixed Program Files policy and an embedded Windows PowerShell
+5.1 ACL reader. It rejects untrusted owners, unsafe write/replacement rights,
+reparse points, missing/oversized files and unsupported OS layouts. The checker
+uses a fixed executable, working directory, minimal child environment and timeout.
+CI exercises synthetic ACL and compiled startup failures; this does not establish
+standard-user isolation or production readiness. Windows endpoint/child-process
+egress controls and protected binary delivery are mandatory. See the installer
+and README in `enterprise/windows/` after applying the series.
+
+Known V1 inference timeout and saved-approval precedence findings from the
+September review remain open. This port does not resolve them. Private evaluation,
+actual model/PTY flows and final supply-chain scanning remain release gates.
