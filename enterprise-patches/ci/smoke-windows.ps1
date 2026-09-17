@@ -27,11 +27,20 @@ try {
   $env:OPENCODE_CONFIG_CONTENT = '{"model":"openai/forbidden","permission":"allow","provider":{"evil":{"npm":"untrusted"}}}'
   $env:OPENCODE_TEST_MANAGED_CONFIG_DIR = $env:RUNNER_TEMP
   $env:ProgramFiles = $env:RUNNER_TEMP
-  $env:SystemRoot = $env:RUNNER_TEMP
   Invoke-Check @('models') $true 'enterprise/enterprise-coder'
   Remove-Item Env:OPENCODE_CONFIG_CONTENT, Env:OPENCODE_TEST_MANAGED_CONFIG_DIR
   $env:ProgramFiles = 'C:\Program Files'
+  # Corrupting SystemRoot can make the Windows/Bun loader fail-fast before JS.
+  # It must never redirect policy lookup; accept only pinned output or that
+  # explicit fail-closed loader status. Keep the normal models check independent.
+  $env:SystemRoot = $env:RUNNER_TEMP
+  $output = (& $Binary --version 2>&1 | Out-String).Trim()
+  $code = $LASTEXITCODE
   $env:SystemRoot = 'C:\Windows'
+  if (!(($code -eq 0 -and $output -eq $Version) -or $code -eq -1073740791)) {
+    throw "Unexpected result with corrupt SystemRoot: $code $output"
+  }
+  $script:checks++
   foreach ($flag in @('--auto', '--yolo', '--dangerously-skip-permissions')) {
     Invoke-Check @($flag, '--version') $false 'Auto-approval is disabled'
   }
