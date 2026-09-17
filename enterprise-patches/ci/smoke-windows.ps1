@@ -6,8 +6,21 @@ $Binary = (Resolve-Path -LiteralPath $Binary).Path
 $directory = 'C:\Program Files\OpenCode Enterprise'
 $policy = "$directory\enterprise.json"
 $original = [IO.File]::ReadAllBytes($policy)
-$fileAcl = [IO.File]::GetAccessControl($policy)
-$dirAcl = [IO.Directory]::GetAccessControl($directory)
+$sections = [Security.AccessControl.AccessControlSections]'Access,Owner,Group'
+$fileSddl = [IO.File]::GetAccessControl($policy).GetSecurityDescriptorSddlForm($sections)
+$dirSddl = [IO.Directory]::GetAccessControl($directory).GetSecurityDescriptorSddlForm($sections)
+function Restore-FileAcl {
+  # SetAccessControl persists only dirty sections. Reusing an unmodified GetAcl
+  # snapshot is a no-op: reconstruct from immutable SDDL to mark each section.
+  $restored = New-Object Security.AccessControl.FileSecurity
+  $restored.SetSecurityDescriptorSddlForm($fileSddl, $sections)
+  [IO.File]::SetAccessControl($policy, $restored)
+}
+function Restore-DirectoryAcl {
+  $restored = New-Object Security.AccessControl.DirectorySecurity
+  $restored.SetSecurityDescriptorSddlForm($dirSddl, $sections)
+  [IO.Directory]::SetAccessControl($directory, $restored)
+}
 $checks = 0
 function Invoke-Check([string[]]$Arguments, [bool]$Allowed, [string]$Expected) {
   # Windows PowerShell represents native stderr as ErrorRecord; retain it without
@@ -51,19 +64,22 @@ try {
     [void]$acl.AddAccessRule($rule)
     [IO.File]::SetAccessControl($policy, $acl)
     Invoke-Check @('--version') $false 'Enterprise Windows policy rejected'
-    [IO.File]::SetAccessControl($policy, $fileAcl)
+    Restore-FileAcl
+    Invoke-Check @('--version') $true $Version
   }
   $acl = [IO.Directory]::GetAccessControl($directory)
   $rule = New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier('S-1-5-32-545')), 'DeleteSubdirectoriesAndFiles', 'Allow')
   [void]$acl.AddAccessRule($rule)
   [IO.Directory]::SetAccessControl($directory, $acl)
   Invoke-Check @('--version') $false 'Enterprise Windows policy rejected'
-  [IO.Directory]::SetAccessControl($directory, $dirAcl)
+  Restore-DirectoryAcl
+  Invoke-Check @('--version') $true $Version
   $acl = [IO.File]::GetAccessControl($policy)
   $acl.SetOwner([Security.Principal.WindowsIdentity]::GetCurrent().User)
   [IO.File]::SetAccessControl($policy, $acl)
   Invoke-Check @('--version') $false 'Untrusted policy owner'
-  [IO.File]::SetAccessControl($policy, $fileAcl)
+  Restore-FileAcl
+  Invoke-Check @('--version') $true $Version
   [IO.File]::WriteAllText($policy, '{invalid json')
   Invoke-Check @('--version') $false ''
   [IO.File]::WriteAllText($policy, ('x' * 16385))
@@ -84,7 +100,7 @@ try {
   Invoke-Check @('--version') $true $Version
   Write-Output "Windows compiled-binary regression checks passed: $checks"
 } finally {
-  [IO.Directory]::SetAccessControl($directory, $dirAcl)
+  Restore-DirectoryAcl
   [IO.File]::WriteAllBytes($policy, $original)
-  [IO.File]::SetAccessControl($policy, $fileAcl)
+  Restore-FileAcl
 }
