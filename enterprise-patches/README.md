@@ -25,7 +25,7 @@ git am "$patch_dir"/000*.patch
 ```
 
 Серия: (1) доверенная конфигурация и одна модель; (2) транспорт и запреты обхода;
-(3) отключение удалённой телеметрии/sharing/cloud entrypoints; (4) тесты и документация.
+(3) отключение удалённой телеметрии/sharing/cloud entrypoints; (4) тесты и документация; (5) Windows policy с проверкой NTFS ACL.
 Не применять вслепую к другой версии. После обновления повторить review изменённых
 путей выполнения и все release gates. Целевой форк: https://github.com/keugenek/opencode-enterprise.
 Эта директория содержит patch series; само её добавление в dev не включает
@@ -120,7 +120,7 @@ Workflow: [Enterprise build and release](../.github/workflows/enterprise-release
 
 Pipeline проверяет SHA256SUMS, создаёт отдельный worktree точного BASE_COMMIT,
 при необходимости загружает точный baseline SHA из upstream (release-коммит может
-отсутствовать в истории dev-форка), применяет четыре патча, устанавливает Bun 1.3.14 и зависимости по lockfile,
+отсутствовать в истории dev-форка), применяет серию из пяти патчей, устанавливает Bun 1.3.14 и зависимости по lockfile,
 запускает 32 направленных теста и typecheck трёх пакетов. Затем он собирает Linux
 x64/glibc (AVX2) CLI и проверяет бинарник: версия, игнорирование cloud config,
 отказ для auto/yolo flags и остановка без администраторской политики.
@@ -174,3 +174,22 @@ Kubernetes-манифесты и offline-проверка подписанног
 [contribution guide](../CONTRIBUTING.md), [границы кода и данных](../community/DEVELOPMENT-MODEL.md)
 и [проверку обновлений](../community/UPSTREAM.md). Серия расширяема: сейчас в ней
 четыре патча, новые изменения добавляются следующими номерами с обновлением checksums.
+
+## Windows x64
+
+Патч `0005-windows-policy.patch` добавляет нативный Windows runtime с фиксированной
+политикой `C:\Program Files\OpenCode Enterprise\enterprise.json`. Путь, владелец
+и права NTFS проверяются при чтении; пользовательские переменные не выбирают policy.
+Windows PowerShell 5.1 и системный каталог `C:\Windows` обязательны. Установщик и
+инструкция включены в патч: `enterprise/windows/`.
+
+Отдельная задача `Test and build Windows x64` выполняет регрессии и typecheck,
+собирает `.exe` и проверяет небезопасные ACL, замену владельца, junction, отсутствие
+и повреждение policy, подмену env/config и auto-approval flags. Артефакт
+`enterprise-windows-x64` содержит ZIP, исходники, патчи и SHA256SUMS.
+Ранее приведённые результаты Linux не подтверждают прохождение нового Windows CI.
+
+[Схема деплоя](../delivery/DEPLOYMENT-ARCHITECTURE.md) описывает VPN, proxy,
+LLM-router, общий план и кеши. Windows требует отдельной приёмки стандартной учётной
+записью, реального inference/PTY, защиты сети и подписи бинарника. Известные риски
+таймаутов и приоритетов saved approvals этим портом не исправляются.

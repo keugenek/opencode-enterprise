@@ -76,6 +76,18 @@ CI does not establish customer production acceptance. No completed private eval,
 production deployment, universal safety guarantee or compliance certification is
 claimed. The private corpus and remediation implementation are not included here.
 
+## Windows and deployment topology
+
+Native Windows x64 CLI/TUI support is supplied by patch 0005 and the
+`Test and build Windows x64` job. Download `enterprise-windows-x64` only from a
+successful run. The ZIP contains administrator installation instructions; Windows
+requires protected NTFS policy and a managed endpoint. This is a pilot candidate.
+
+See [deployment architecture](delivery/DEPLOYMENT-ARCHITECTURE.md) for the corporate
+VPN, internal proxy, fixed-model LLM router, vLLM replicas, shared development plan
+and isolated caches. These infrastructure services are a reference design, not
+services deployed by this repository.
+
 ## Security and compliance
 
 - [Internal security process](assurance/SECURITY-PROCESS.md): ownership, review,
@@ -100,7 +112,7 @@ network and access controls; an application policy alone is not a sandbox.
 | Canonical repository | [keugenek/opencode-enterprise](https://github.com/keugenek/opencode-enterprise) |
 | Upstream | [anomalyco/opencode](https://github.com/anomalyco/opencode) |
 | Category | Self-hosted AI coding agent; enterprise coding harness; on-premises developer tooling |
-| Supported candidate | Linux x64/glibc AVX2 CLI/TUI; one fixed internal model |
+| Supported candidate | Linux x64/glibc and Windows x64 AVX2 CLI/TUI; one fixed internal model |
 | Installation | [MVP toolkit](mvp/README.md); enterprise patches must be applied before building |
 | Evidence | [Security review](enterprise-patches/SECURITY-REVIEW.md), [private eval contract](assurance/PRIVATE-EVAL.md), [compliance matrix](assurance/COMPLIANCE.md) |
 | Public licence | [MIT](LICENSE), with [commercial delivery boundaries](LICENSING.md) |
@@ -111,7 +123,7 @@ network and access controls; an application policy alone is not a sandbox.
 ### Is this an OpenWebUI enterprise fork?
 
 This is an OpenCode coding-harness fork, not an OpenWebUI chat frontend.
-The supported interface is the Linux CLI/TUI.
+The supported candidate interfaces are the Linux and Windows CLI/TUI.
 
 ### Can I use vLLM with a private model?
 

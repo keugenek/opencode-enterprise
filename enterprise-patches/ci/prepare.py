@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify the published series and apply it to an isolated exact-baseline worktree."""
 import argparse
+import os
 import pathlib
 import re
 import subprocess
@@ -24,7 +25,7 @@ if subprocess.run(['git', 'cat-file', '-e', baseline + '^{commit}'], cwd=root,
     subprocess.run(['git', 'fetch', '--depth=1', '--no-tags', 'https://github.com/anomalyco/opencode.git', baseline],
                    cwd=root, check=True)
 subprocess.run(['git', 'cat-file', '-e', baseline + '^{commit}'], cwd=root, check=True)
-subprocess.run(['git', '-c', 'core.hooksPath=/dev/null', 'worktree', 'add', '--detach', str(target), baseline], cwd=root, check=True)
-subprocess.run(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'user.name=Enterprise CI', '-c', 'user.email=ci@localhost',
+subprocess.run(['git', '-c', 'core.hooksPath=' + os.devnull, 'worktree', 'add', '--detach', str(target), baseline], cwd=root, check=True)
+subprocess.run(['git', '-c', 'core.hooksPath=' + os.devnull, '-c', 'user.name=Enterprise CI', '-c', 'user.email=ci@localhost',
                 'am', *[str(p) for p in patches]], cwd=target, check=True)
 print('Patched source tree:', subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], cwd=target).decode().strip())

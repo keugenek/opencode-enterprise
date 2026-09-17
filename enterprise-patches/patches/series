@@ -2,3 +2,4 @@
 0002-transport-guardrails.patch
 0003-disable-remote-services.patch
 0004-tests-deployment-review.patch
+0005-windows-policy.patch
