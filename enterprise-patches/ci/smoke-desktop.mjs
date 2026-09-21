@@ -29,8 +29,45 @@ await writeFile(
 const checks = []
 const requests = new Set()
 const failures = []
+const secrets = new Set()
+const diagnostics = { consoleErrors: [], requestFailures: [], httpErrors: [], rendererErrors: failures }
 const running = { app: undefined, page: undefined }
-const report = { kind: "native-windows-desktop-smoke", checks, inference: "not-run", result: "failed", passed: false }
+const report = {
+  kind: "native-windows-desktop-smoke",
+  checks,
+  inference: "not-run",
+  result: "failed",
+  passed: false,
+  diagnostics,
+}
+
+function safeURL(raw) {
+  if (!URL.canParse(raw)) return "[invalid URL]"
+  const url = new URL(raw)
+  if (!["http:", "https:", "ws:", "wss:", "oc:"].includes(url.protocol)) return url.protocol
+  return `${url.protocol}//${url.host}${url.pathname}`
+}
+
+function safeText(raw) {
+  let text = String(raw)
+  for (const secret of secrets) text = text.replaceAll(secret, "[redacted]")
+  return text
+    .replace(/\b(?:Basic|Bearer)\s+[A-Za-z0-9._~+/=-]+/gi, "[redacted authorization]")
+    .replace(/(?:https?|wss?|oc):\/\/[^\s<>"']+/gi, safeURL)
+    .slice(0, 4000)
+}
+
+const observedPages = new WeakSet()
+function observePage(page) {
+  if (observedPages.has(page)) return
+  observedPages.add(page)
+  page.on("websocket", (socket) => requests.add(socket.url()))
+  page.on("pageerror", (error) => failures.push(safeText(error.message)))
+  page.on("console", (message) => {
+    if (message.type() !== "error") return
+    diagnostics.consoleErrors.push({ text: safeText(message.text()), url: safeURL(message.location().url) })
+  })
+}
 
 function allowed(raw, origin) {
   const url = new URL(raw)
@@ -84,14 +121,20 @@ try {
     },
   })
   running.app.context().on("request", (request) => requests.add(request.url()))
-  running.app.context().on("page", (page) => {
-    page.on("websocket", (socket) => requests.add(socket.url()))
-    page.on("pageerror", (error) => failures.push(error.message))
+  running.app.context().on("requestfailed", (request) => {
+    diagnostics.requestFailures.push({
+      url: safeURL(request.url()),
+      error: safeText(request.failure()?.errorText ?? "unknown"),
+    })
   })
+  running.app.context().on("response", (response) => {
+    if (response.status() < 400) return
+    diagnostics.httpErrors.push({ url: safeURL(response.url()), status: response.status() })
+  })
+  running.app.context().on("page", observePage)
   running.page = await running.app.firstWindow({ timeout: 60_000 })
   const page = running.page
-  page.on("websocket", (socket) => requests.add(socket.url()))
-  page.on("pageerror", (error) => failures.push(error.message))
+  observePage(page)
   page.setDefaultTimeout(30_000)
   await expect(page).toHaveURL(/^oc:\/\/renderer\//, { timeout: 60_000 })
   const native = await running.app.evaluate(({ app, BrowserWindow }) => {
@@ -120,6 +163,8 @@ try {
   assert.equal(typeof connection.password, "string")
   assert(connection.password.length >= 32, "Sidecar must supply a strong per-launch credential")
   const authorization = `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString("base64")}`
+  secrets.add(connection.password)
+  secrets.add(authorization)
   const api = (route, options = {}) => {
     const url = new URL(route, origin)
     url.searchParams.set("directory", workspace)
@@ -216,6 +261,26 @@ try {
   assert.equal((await page.evaluate(() => window.api.updater.check())).status, "disabled")
   checks.push("native IPC cannot select a remote server; updater disabled")
 
+  // Probe the renderer transport separately from Node's API client. Do not add
+  // Authorization or bypass CORS: the production main-process hook supplies it.
+  diagnostics.rendererHealth = await deadline(
+    page.evaluate(async (endpoint) => {
+      const context = {
+        locationOrigin: location.origin,
+        documentURL: `${location.protocol}//${location.host}${location.pathname}`,
+      }
+      try {
+        const response = await fetch(endpoint, { signal: AbortSignal.timeout(15_000), redirect: "error" })
+        await response.arrayBuffer()
+        return { ...context, status: response.status, responseType: response.type }
+      } catch (error) {
+        return { ...context, error: error instanceof Error ? error.message : String(error) }
+      }
+    }, new URL("/global/health", origin).href),
+    "renderer health diagnostic",
+    20_000,
+  )
+
   // Exercise the real renderer project-opening flow without an interactive OS
   // dialog. No application APIs, server responses or model results are mocked.
   await running.app.evaluate(({ dialog }, directory) => {
@@ -245,7 +310,9 @@ try {
   await expect(settings).toHaveCount(0)
   await expect(composer).toBeEditable()
   await page.screenshot({ path: screenshot, fullPage: true })
-  checks.push("standard project/composer UI editable; fixed model visible; provider, shell-configuration and auto-accept settings absent")
+  checks.push(
+    "standard project/composer UI editable; fixed model visible; provider, shell-configuration and auto-accept settings absent",
+  )
 
   // Flush Chromium's startup capture before inspecting it. Renderer event
   // subscriptions alone miss requests made before Playwright attaches.
@@ -269,13 +336,43 @@ try {
     "Missing-policy desktop startup not exercised; protected policy left untouched",
   ]
 } catch (error) {
-  report.error = error instanceof Error ? error.message : String(error)
+  report.error = safeText(error instanceof Error ? error.message : String(error))
+  if (running.app) {
+    await deadline(
+      running.app.evaluate(async ({ netLog }) => {
+        if (netLog.currentlyLogging) await netLog.stopLogging()
+      }),
+      "failure network capture",
+      10_000,
+    ).catch(() => {})
+    await readFile(netlog, "utf8")
+      .then((text) => {
+        const network = JSON.parse(text)
+        const sources = new Map()
+        for (const event of network.events ?? []) {
+          const urls = eventURLs(event.params)
+          for (const url of urls) requests.add(url)
+          if (urls.length) sources.set(event.source?.id, urls.map(safeURL))
+        }
+        diagnostics.networkErrors = (network.events ?? [])
+          .filter((event) => typeof event.params?.net_error === "number" && event.params.net_error < 0)
+          .map((event) => ({
+            type: event.type,
+            code: event.params.net_error,
+            urls: sources.get(event.source?.id) ?? [],
+          }))
+      })
+      .catch((error) => {
+        diagnostics.networkCaptureError = safeText(error.message)
+      })
+  }
   if (running.page)
     await running.page
       .screenshot({ path: screenshot.replace(/\.png$/i, "-failure.png"), fullPage: true })
       .catch(() => {})
   throw error
 } finally {
+  diagnostics.observedURLs = [...new Set([...requests].map(safeURL))]
   if (running.app)
     await deadline(running.app.close(), "native application shutdown", 20_000).catch(() => running.app.process().kill())
   await writeFile(screenshot.replace(/\.png$/i, ".json"), `${JSON.stringify(report, null, 2)}\n`)

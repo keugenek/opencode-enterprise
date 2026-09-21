@@ -1,0 +1,86 @@
+From d11ccfd347179fbb97525398ca3a2f841dfa9020 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Mon, 21 Sep 2026 13:29:00 +0200
+Subject: [PATCH] fix(desktop): normalize private sidecar authorization headers
+
+---
+ packages/desktop/src/main/enterprise.test.ts | 14 ++++++++++++++
+ packages/desktop/src/main/enterprise.ts      |  7 +++++++
+ packages/desktop/src/main/windows.ts         |  6 ++----
+ 3 files changed, 23 insertions(+), 4 deletions(-)
+
+diff --git a/packages/desktop/src/main/enterprise.test.ts b/packages/desktop/src/main/enterprise.test.ts
+index 40695f2..91b7351 100644
+--- a/packages/desktop/src/main/enterprise.test.ts
++++ b/packages/desktop/src/main/enterprise.test.ts
+@@ -1,6 +1,7 @@
+ import { describe, expect, test } from "bun:test"
+ import {
+   enterpriseRequest,
++  enterpriseRequestHeaders,
+   enterpriseSidecarEnv,
+   enterpriseCsp,
+   setEnterpriseConnection,
+@@ -48,6 +49,19 @@ describe("native enterprise boundary", () => {
+     expect(result).not.toHaveProperty("OPENCODE_WORKSPACE_ID")
+     expect(result.PATH).toBe("/tools")
+   })
++  test("native HTTP and WebSocket credentials use one string request header on the exact sidecar", () => {
++    setEnterpriseConnection({ url: "http://127.0.0.1:41965", password: "per-launch-credential-with-32-bytes" })
++    const expected = `Basic ${Buffer.from("opencode:per-launch-credential-with-32-bytes").toString("base64")}`
++    for (const url of ["http://127.0.0.1:41965/global/health", "ws://127.0.0.1:41965/pty/a/connect"]) {
++      expect(enterpriseRequestHeaders(url, { authorization: "stale", Accept: "application/json" })).toEqual({
++        Authorization: expected,
++        Accept: "application/json",
++      })
++    }
++    for (const url of ["oc://renderer/index.html", "http://127.0.0.1:41966/global/health", "https://external.invalid"]) {
++      expect(enterpriseRequestHeaders(url, { Accept: "application/json" })).toEqual({ Accept: "application/json" })
++    }
++  })
+   test("IPC store names cannot escape application state directory", () => {
+     expect(validStoreName("opencode.settings.dat")).toBe(true)
+     expect(validStoreName("opencode.window.123.dat")).toBe(true)
+diff --git a/packages/desktop/src/main/enterprise.ts b/packages/desktop/src/main/enterprise.ts
+index e0186c7..13f9ea1 100644
+--- a/packages/desktop/src/main/enterprise.ts
++++ b/packages/desktop/src/main/enterprise.ts
+@@ -20,6 +20,13 @@ export function enterpriseRequest(value: string) {
+   return { allowed: true, authorization: `Basic ${Buffer.from(`opencode:${connection.password}`).toString("base64")}` }
+ }
+ 
++export function enterpriseRequestHeaders(value: string, input: Record<string, string>) {
++  const policy = enterpriseRequest(value)
++  if (!policy.authorization) return input
++  const headers = Object.fromEntries(Object.entries(input).filter(([key]) => key.toLowerCase() !== "authorization"))
++  return { ...headers, Authorization: policy.authorization }
++}
++
+ export function enterpriseSidecarEnv(input: NodeJS.ProcessEnv, userDataPath: string) {
+   const env = Object.fromEntries(
+     Object.entries(input).flatMap(([key, value]) => (value === undefined ? [] : [[key, value]])),
+diff --git a/packages/desktop/src/main/windows.ts b/packages/desktop/src/main/windows.ts
+index 6233e8e..abde4ad 100644
+--- a/packages/desktop/src/main/windows.ts
++++ b/packages/desktop/src/main/windows.ts
+@@ -1,5 +1,5 @@
+ import { sep } from "node:path"
+-import { ENTERPRISE, enterpriseRequest, enterpriseCsp } from "./enterprise"
++import { ENTERPRISE, enterpriseRequest, enterpriseRequestHeaders, enterpriseCsp } from "./enterprise"
+ import windowState from "electron-window-state"
+ import { resolveThemeVariant } from "@opencode-ai/ui/theme/resolve"
+ import type { DesktopTheme } from "@opencode-ai/ui/theme/types"
+@@ -224,9 +224,7 @@ export function createMainWindow(id: string = randomUUID()) {
+   win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
+     const { requestHeaders } = details
+     if (ENTERPRISE) {
+-      const policy = enterpriseRequest(details.url)
+-      if (policy.authorization) upsertKeyValue(requestHeaders, "Authorization", [policy.authorization])
+-      callback({ requestHeaders })
++      callback({ requestHeaders: enterpriseRequestHeaders(details.url, requestHeaders) })
+       return
+     }
+     upsertKeyValue(requestHeaders, "Access-Control-Allow-Origin", ["*"])
+-- 
+2.51.1
+

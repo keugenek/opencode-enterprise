@@ -23,14 +23,15 @@ git fetch --no-tags https://github.com/anomalyco/opencode.git 16747470f976aca3d3
 patch_dir="$(pwd)/enterprise-patches/patches"
 git worktree add -b enterprise-runtime ../opencode-enterprise-runtime 16747470f976aca3d362ad730bcd3fe82ecc2c9a
 cd ../opencode-enterprise-runtime
-git am "$patch_dir"/000*.patch
+while IFS= read -r patch; do git am "$patch_dir/$patch" || exit; done < "$patch_dir/series"
 ```
 
 Серия: (1) доверенная конфигурация и одна модель; (2) транспорт и запреты обхода;
 (3) отключение удалённой телеметрии/sharing/cloud entrypoints; (4) тесты и документация;
 (5) Windows policy с проверкой NTFS ACL; (6) анализ shell и session-scoped approvals;
 (7) обязательные inference deadlines; (8) нативный Windows desktop с enterprise UI
-и ограниченным локальным backend. Точный порядок задаёт `patches/series`.
+и ограниченным локальным backend; (9) блокировка редиректов PowerShell;
+(10) нормализация заголовка авторизации native sidecar. Точный порядок задаёт `patches/series`.
 Не применять вслепую к другой версии. После обновления повторить review изменённых
 путей выполнения и все release gates. Целевой форк: https://github.com/keugenek/opencode-enterprise.
 Эта директория содержит patch series; само её добавление в dev не включает
