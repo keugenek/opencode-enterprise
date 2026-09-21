@@ -6,3 +6,4 @@
 0006-execution-permissions.patch
 0007-inference-deadlines.patch
 0008-native-desktop.patch
+0009-windows-shell-guards.patch
