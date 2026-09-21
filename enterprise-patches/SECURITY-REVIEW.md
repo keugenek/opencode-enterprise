@@ -126,6 +126,12 @@ not select an unpatched remote server, and remote attachments must be rejected
 before SDK preprocessing can fetch their URLs. Directed regression checks are
 part of the candidate; their exact release-run status remains a CI gate.
 
+The native terminal ignores project/global shell settings and request-supplied
+startup commands, arguments and environment overrides. It uses the workstation's
+default shell and retains interactive user input. The packaged-client smoke must
+open a local project and
+execute a harmless marker through the real terminal and WebSocket transport.
+
 Review/acceptance must cover Electron navigation and IPC boundaries, authenticated
 local transport, renderer network requests, native modules, standard-user policy
 failures and child-process cleanup. A screenshot demonstrates rendering, not these

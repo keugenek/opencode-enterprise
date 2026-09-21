@@ -8,3 +8,5 @@
 0008-native-desktop.patch
 0009-windows-shell-guards.patch
 0010-native-request-headers.patch
+0011-native-terminal-startup.patch
+0012-native-preferences-bootstrap.patch

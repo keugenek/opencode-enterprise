@@ -3,6 +3,7 @@
 // utility-process sidecar. Only the native directory picker is stubbed, following
 // https://playwright.dev/docs/api/class-electron#mocking-native-dialogs .
 import assert from "node:assert/strict"
+import { randomUUID } from "node:crypto"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import os from "node:os"
@@ -25,6 +26,9 @@ await writeFile(
   path.join(workspace, "README.md"),
   "# Enterprise desktop smoke\nLocal UI and policy checks; no inference evaluation.\n",
 )
+// Opening the standard terminal must not launch a repository-selected program.
+const unapprovedShell = path.join(workspace, "unapproved-shell-must-not-run.exe")
+await writeFile(path.join(workspace, "opencode.json"), JSON.stringify({ shell: unapprovedShell }))
 
 const checks = []
 const requests = new Set()
@@ -97,6 +101,43 @@ async function deadline(promise, label, ms = 45_000) {
   } finally {
     clearTimeout(timer)
   }
+}
+
+async function closeApplication() {
+  const app = running.app
+  if (!app) return
+  // The command-line netlog is finalized by process shutdown, not by the
+  // session netLog API. Retain the process locally and never close it twice.
+  running.app = undefined
+  try {
+    await deadline(app.close(), "native application shutdown", 20_000)
+  } catch (error) {
+    diagnostics.shutdownError = safeText(error.message)
+    try {
+      app.process().kill()
+    } catch {
+      // Preserve the shutdown failure even if the process has already exited.
+    }
+    throw error
+  }
+}
+
+async function readStartupNetworkCapture() {
+  const network = JSON.parse(await readFile(netlog, "utf8"))
+  const sources = new Map()
+  for (const event of network.events ?? []) {
+    const urls = eventURLs(event.params)
+    for (const url of urls) requests.add(url)
+    if (urls.length) sources.set(event.source?.id, urls.map(safeURL))
+  }
+  diagnostics.networkErrors = (network.events ?? [])
+    .filter((event) => typeof event.params?.net_error === "number" && event.params.net_error < 0)
+    .map((event) => ({
+      type: event.type,
+      code: event.params.net_error,
+      urls: sources.get(event.source?.id) ?? [],
+    }))
+  return network
 }
 
 try {
@@ -314,14 +355,101 @@ try {
     "standard project/composer UI editable; fixed model visible; provider, shell-configuration and auto-accept settings absent",
   )
 
-  // Flush Chromium's startup capture before inspecting it. Renderer event
-  // subscriptions alone miss requests made before Playwright attaches.
-  await running.app.evaluate(async ({ netLog }) => {
-    await netLog.stopLogging()
+  const draft = await composer.innerText()
+  const terminalState = { frames: 0, output: "", errors: [] }
+  const terminalDiagnostic = { phase: "opening", receivedFrames: 0, errors: terminalState.errors }
+  diagnostics.terminal = terminalDiagnostic
+  const terminalURL = (raw) => {
+    const url = new URL(raw)
+    return url.host === origin.host && /^\/pty\/[^/]+\/connect$/.test(url.pathname)
+  }
+  const watchTerminal = (socket) => {
+    if (!terminalURL(socket.url())) return
+    socket.on("framereceived", ({ payload }) => {
+      terminalState.frames += 1
+      terminalDiagnostic.receivedFrames = terminalState.frames
+      // A binary frame beginning with NUL is a replay cursor, not terminal text.
+      const text = typeof payload === "string" ? payload : payload[0] === 0 ? "" : payload.toString("utf8")
+      terminalState.output = (terminalState.output + text).slice(-65536)
+    })
+    socket.on("socketerror", (error) => terminalState.errors.push(safeText(error)))
+  }
+  page.on("websocket", watchTerminal)
+  // Arm both observers before the UI action; neither PTY creation nor its
+  // authenticated WebSocket transport is mocked.
+  const [ptyResponse, socket] = await Promise.all([
+    page.waitForResponse(
+      (response) => {
+        const url = new URL(response.url())
+        return url.origin === origin.origin && url.pathname === "/pty" && response.request().method() === "POST"
+      },
+      { timeout: 45_000 },
+    ),
+    page.waitForEvent("websocket", { predicate: (socket) => terminalURL(socket.url()), timeout: 45_000 }),
+    page.keyboard.press("Control+Backquote"),
+  ])
+  assert.equal(ptyResponse.status(), 200, "Native terminal must create a real PTY")
+  const pty = await ptyResponse.json()
+  assert.equal(pty.status, "running")
+  assert(Number.isInteger(pty.pid) && pty.pid > 0)
+  assert.equal(path.resolve(pty.cwd).toLowerCase(), path.resolve(workspace).toLowerCase())
+  assert.notEqual(pty.command.toLowerCase(), unapprovedShell.toLowerCase(), "Repository shell override must be ignored")
+  const connected = new URL(socket.url())
+  assert.equal(connected.pathname, `/pty/${pty.id}/connect`)
+  assert(
+    !connected.username && !connected.password && !connected.searchParams.has("auth_token"),
+    "Native WebSocket must not put credentials in its URL",
+  )
+  const terminal = page.locator('[data-component="terminal"]:visible')
+  await expect(terminal).toBeVisible({ timeout: 30_000 })
+  await expect(terminal.locator("textarea")).toHaveCount(1)
+  await expect.poll(() => terminalState.frames, { timeout: 30_000 }).toBeGreaterThan(0)
+  await expect
+    .poll(() => terminal.evaluate((element) => element.contains(document.activeElement)), { timeout: 30_000 })
+    .toBe(true)
+  terminalDiagnostic.phase = "executing-marker"
+  const nonce = randomUUID().slice(0, 8)
+  const marker = `ENTERPRISE_PTY_OK_${nonce}`
+  const command = `powershell.exe -NoLogo -NoProfile -NonInteractive -Command "Write-Output ('ENTERPRISE_PTY_' + 'OK_${nonce}')"`
+  assert(!command.includes(marker), "Typed input must not contain the expected output marker")
+  await page.keyboard.type(command)
+  await page.keyboard.press("Enter")
+  await expect.poll(() => terminalState.output.includes(marker), { timeout: 30_000 }).toBe(true)
+  await expect(composer).toHaveText(draft)
+  assert.deepEqual(terminalState.errors, [], "Native terminal WebSocket failed")
+  terminalDiagnostic.phase = "marker-received"
+  terminalDiagnostic.command = path.basename(pty.command)
+  terminalDiagnostic.markerReceived = true
+  const unauthenticated = new URL(`/pty/${pty.id}/connect`, origin)
+  unauthenticated.searchParams.set("directory", workspace)
+  const rejected = await fetch(unauthenticated, {
+    headers: { Origin: "oc://renderer" },
+    signal: AbortSignal.timeout(20_000),
+    redirect: "error",
   })
-  const network = JSON.parse(await readFile(netlog, "utf8"))
+  assert.equal(rejected.status, 401, "PTY connection must require the native sidecar credential")
+  await rejected.arrayBuffer()
+  await page.screenshot({ path: screenshot, fullPage: true })
+  checks.push(
+    "native terminal ignores project shell override; real authenticated PTY/WebSocket executes harmless marker; composer unchanged",
+  )
+  const [closed] = await Promise.all([
+    page.waitForResponse(
+      (response) => new URL(response.url()).pathname === `/pty/${pty.id}` && response.request().method() === "DELETE",
+      { timeout: 30_000 },
+    ),
+    page.getByRole("button", { name: "Close terminal", exact: true }).click(),
+  ])
+  assert.equal(closed.status(), 200, "Closing the terminal must remove its PTY")
+  await expect(terminal).not.toBeVisible()
+  page.off("websocket", watchTerminal)
+  terminalDiagnostic.phase = "closed"
+
+  // The screenshot has already been saved. Graceful process exit finalizes the
+  // command-line netlog, preserving requests made before Playwright attaches.
+  await closeApplication()
+  const network = await readStartupNetworkCapture()
   assert(Array.isArray(network.events) && network.events.length > 0, "Missing Chromium startup network evidence")
-  for (const event of network.events) for (const url of eventURLs(event.params)) requests.add(url)
   const external = [...requests].filter((url) => !allowed(url, origin.origin))
   assert.deepEqual(external, [], "Desktop attempted an external renderer/Chromium network request")
   assert.deepEqual(failures, [], "Renderer encountered an uncaught exception")
@@ -337,44 +465,20 @@ try {
   ]
 } catch (error) {
   report.error = safeText(error instanceof Error ? error.message : String(error))
-  if (running.app) {
-    await deadline(
-      running.app.evaluate(async ({ netLog }) => {
-        if (netLog.currentlyLogging) await netLog.stopLogging()
-      }),
-      "failure network capture",
-      10_000,
-    ).catch(() => {})
-    await readFile(netlog, "utf8")
-      .then((text) => {
-        const network = JSON.parse(text)
-        const sources = new Map()
-        for (const event of network.events ?? []) {
-          const urls = eventURLs(event.params)
-          for (const url of urls) requests.add(url)
-          if (urls.length) sources.set(event.source?.id, urls.map(safeURL))
-        }
-        diagnostics.networkErrors = (network.events ?? [])
-          .filter((event) => typeof event.params?.net_error === "number" && event.params.net_error < 0)
-          .map((event) => ({
-            type: event.type,
-            code: event.params.net_error,
-            urls: sources.get(event.source?.id) ?? [],
-          }))
-      })
-      .catch((error) => {
-        diagnostics.networkCaptureError = safeText(error.message)
-      })
-  }
-  if (running.page)
+  // Preserve the visible failure before shutting down the renderer, then read
+  // the complete startup capture after shutdown, including on assertion errors.
+  if (running.page && !running.page.isClosed())
     await running.page
       .screenshot({ path: screenshot.replace(/\.png$/i, "-failure.png"), fullPage: true })
       .catch(() => {})
+  await closeApplication().catch(() => {})
+  await readStartupNetworkCapture().catch((error) => {
+    diagnostics.networkCaptureError = safeText(error.message)
+  })
   throw error
 } finally {
   diagnostics.observedURLs = [...new Set([...requests].map(safeURL))]
-  if (running.app)
-    await deadline(running.app.close(), "native application shutdown", 20_000).catch(() => running.app.process().kill())
+  await closeApplication().catch(() => {})
   await writeFile(screenshot.replace(/\.png$/i, ".json"), `${JSON.stringify(report, null, 2)}\n`)
   await rm(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch(() => {})
   console.log(JSON.stringify(report))

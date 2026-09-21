@@ -31,7 +31,9 @@ while IFS= read -r patch; do git am "$patch_dir/$patch" || exit; done < "$patch_
 (5) Windows policy с проверкой NTFS ACL; (6) анализ shell и session-scoped approvals;
 (7) обязательные inference deadlines; (8) нативный Windows desktop с enterprise UI
 и ограниченным локальным backend; (9) блокировка редиректов PowerShell;
-(10) нормализация заголовка авторизации native sidecar. Точный порядок задаёт `patches/series`.
+(10) нормализация заголовка авторизации native sidecar; (11) защита запуска
+встроенного терминала; (12) совместимость локальных настроек и отключение
+запросов к неподдерживаемым каталогам UI. Точный порядок задаёт `patches/series`.
 Не применять вслепую к другой версии. После обновления повторить review изменённых
 путей выполнения и все release gates. Целевой форк: https://github.com/keugenek/opencode-enterprise.
 Эта директория содержит patch series; само её добавление в dev не включает

@@ -276,7 +276,7 @@ jobs:
           Pop-Location
       - name: Enterprise native frontend regressions
         working-directory: ${{ runner.temp }}/patched-source/packages/app
-        run: bun test --conditions=solid --preload ./happydom.ts ./src/utils/enterprise.test.ts ./src/context/server.test.ts ./src/components/prompt-input/build-request-parts.test.ts ./src/context/permission-auto-respond.test.ts ./src/utils/terminal-websocket-url.test.ts
+        run: bun test --conditions=solid --preload ./happydom.ts ./src/utils/enterprise.test.ts ./src/context/server.test.ts ./src/components/prompt-input/build-request-parts.test.ts ./src/context/permission-auto-respond.test.ts ./src/utils/terminal-websocket-url.test.ts ./src/context/global-sync/bootstrap.test.ts ./src/context/server-sync.test.ts
       - name: Native packaging regression tests
         working-directory: ${{ runner.temp }}/patched-source/packages/desktop
         run: bun test scripts/enterprise-build.test.ts electron-builder.config.test.ts src/main/enterprise.test.ts

@@ -85,6 +85,9 @@ sharing/update flows and arbitrary plugins/MCP; the backend retains the fixed
 model, transport and permission restrictions. V2 is not enabled by this build.
 A local transport is an implementation detail, not an approved remotely exposed
 API. Do not open it to the LAN or place it behind a shared public proxy.
+The built-in terminal remains available with the workstation's default shell;
+project settings cannot replace its startup executable or inject startup arguments
+and environment variables. Interactive commands still run as the developer.
 
 Place the managed workstation/VDI behind the corporate VPN and apply the approved
 internal gateway/proxy policy. Enforce allowed network destinations for the desktop,

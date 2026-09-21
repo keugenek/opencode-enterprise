@@ -1,0 +1,103 @@
+From 9050d9a67c7979792a745de2de63a72e6063f75a Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Mon, 21 Sep 2026 13:38:52 +0200
+Subject: [PATCH] fix(desktop): protect the native terminal startup program
+
+---
+ packages/core/src/pty.ts                  | 11 +++--
+ packages/core/test/enterprise/pty.test.ts | 51 +++++++++++++++++++++++
+ 2 files changed, 59 insertions(+), 3 deletions(-)
+ create mode 100644 packages/core/test/enterprise/pty.test.ts
+
+diff --git a/packages/core/src/pty.ts b/packages/core/src/pty.ts
+index e5be4d4..85d7ced 100644
+--- a/packages/core/src/pty.ts
++++ b/packages/core/src/pty.ts
+@@ -5,6 +5,7 @@ import type { Disp, Proc } from "#pty"
+ import { Context, Effect, Layer, Schema, Types } from "effect"
+ import { Pty } from "@opencode-ai/schema/pty"
+ import { Config } from "./config"
++import { Enterprise } from "./enterprise/policy"
+ import { EventV2 } from "./event"
+ import { Location } from "./location"
+ import { PtyID } from "./pty/schema"
+@@ -164,12 +165,16 @@ const layer = Layer.effect(
+ 
+     const create = Effect.fn("Pty.create")(function* (input: CreateInput) {
+       const id = PtyID.ascending()
+-      const command = input.command || Shell.preferred(Config.latest(yield* config.entries(), "shell"))
+-      const args = Shell.login(command) ? [...(input.args ?? []), "-l"] : [...(input.args ?? [])]
++      // The native terminal is interactive, but a repository or API request may
++      // not replace its startup program, arguments or process environment.
++      const command = Enterprise.enabled
++        ? Shell.preferred()
++        : input.command || Shell.preferred(Config.latest(yield* config.entries(), "shell"))
++      const args = [...(Enterprise.enabled ? [] : (input.args ?? [])), ...(Shell.login(command) ? ["-l"] : [])]
+       const cwd = input.cwd || location.directory
+       const env = {
+         ...process.env,
+-        ...input.env,
++        ...(Enterprise.enabled ? {} : input.env),
+         TERM: "xterm-256color",
+         OPENCODE_TERMINAL: "1",
+       } as Record<string, string>
+diff --git a/packages/core/test/enterprise/pty.test.ts b/packages/core/test/enterprise/pty.test.ts
+new file mode 100644
+index 0000000..b838e86
+--- /dev/null
++++ b/packages/core/test/enterprise/pty.test.ts
+@@ -0,0 +1,51 @@
++import { expect } from "bun:test"
++import { Deferred, Effect, Layer } from "effect"
++import { tmpdir } from "node:os"
++import { Config } from "@opencode-ai/core/config"
++import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
++import { LayerNode } from "@opencode-ai/core/effect/layer-node"
++import { EventV2 } from "@opencode-ai/core/event"
++import { Location } from "@opencode-ai/core/location"
++import { Pty } from "@opencode-ai/core/pty"
++import { AbsolutePath } from "@opencode-ai/core/schema"
++import { Shell } from "@opencode-ai/core/shell"
++import { location } from "../fixture/location"
++import { testEffect } from "../lib/effect"
++
++const it = testEffect(
++  AppNodeBuilder.build(LayerNode.group([Pty.node, EventV2.node]), [
++    [Config.node, Layer.mock(Config.Service)({ entries: () => Effect.die("Untrusted shell config was consulted") })],
++    [Location.node, Layer.succeed(Location.Service, Location.Service.of(location({ directory: AbsolutePath.make(tmpdir()) })))],
++  ]),
++)
++// Windows exercises the actual Node/ConPTY implementation in packaged Electron.
++const native = process.platform === "win32" ? it.live.skip : it.live
++
++native("enterprise manual terminal ignores configuration and request startup overrides", () =>
++  Effect.gen(function* () {
++    const pty = yield* Pty.Service
++    const info = yield* Effect.acquireRelease(
++      pty.create({
++        command: "/enterprise-unapproved/never-run",
++        args: ["-c", "exit 99"],
++        env: { OPENCODE_UNTRUSTED_PTY_STARTUP: "injected" },
++        title: "Enterprise manual terminal",
++      }),
++      (created) => pty.remove(created.id).pipe(Effect.ignore),
++    )
++    expect(info.command).toBe(Shell.preferred())
++    expect(info.args).toEqual(Shell.login(Shell.preferred()) ? ["-l"] : [])
++    expect(info.cwd).toBe(tmpdir())
++    expect(info.status).toBe("running")
++    expect(info.pid).toBeGreaterThan(0)
++
++    const exited = yield* Deferred.make<{ exitCode?: number }>()
++    const attachment = yield* pty.attach(info.id, {
++      onData: () => {},
++      onEnd: (event) => Deferred.doneUnsafe(exited, Effect.succeed(event)),
++    })
++    attachment.activate()
++    attachment.write('test -z "$OPENCODE_UNTRUSTED_PTY_STARTUP"; exit $?\n')
++    expect(yield* Deferred.await(exited).pipe(Effect.timeout("5 seconds"))).toEqual({ exitCode: 0 })
++  }),
++)
+-- 
+2.51.1
+
