@@ -7,8 +7,9 @@ or endorsed by the OpenCode team or Anomaly.
 
 OpenCode Enterprise is an independent OpenCode fork for a **self-hosted AI coding
 agent**, **on-premises developer workspaces** and internal LLM infrastructure.
-The supported MVP is a Linux CLI/TUI coding harness with one administrator-controlled
-model. Customer-managed vLLM is a target integration requiring real-model validation.
+The distribution provides Linux and Windows CLI/TUI candidates and a native
+Windows desktop candidate, with one administrator-controlled model. Customer-managed
+vLLM is a target integration requiring real-model validation.
 
 [Deploy a pilot](mvp/README.md) · [Review hardening patches](enterprise-patches/patches/)
 · [Enterprise delivery and support](ENTERPRISE.md) · [Security process](assurance/SECURITY-PROCESS.md)
@@ -39,13 +40,15 @@ The upstream has its own enterprise service; this independent offering is descri
 
 ## Start a controlled MVP pilot
 
-The supported candidate is **Linux x64/glibc (AVX2), CLI/TUI, one fixed internal
-model, one isolated workspace per developer**. Start with a small named cohort and
-the customer's existing Kubernetes, identity/access platform and inference gateway.
+The container pilot guide covers **Linux x64/glibc (AVX2), CLI/TUI, one fixed internal
+model, one isolated workspace per developer**. Windows TUI and native desktop
+installation are described [below](#windows-desktop-tui-and-deployment-topology).
+Start with a small named cohort and the customer's existing access controls and
+internal inference gateway.
 
 1. Agree the [pilot scope and responsibilities](delivery/PILOT.md).
 2. Obtain a tested enterprise binary from this repository's enterprise workflow,
-   or [apply the four patches and build](enterprise-patches/README.md).
+   or [apply the numbered patch series and build](enterprise-patches/README.md).
 3. Follow the [MVP installation guide](mvp/README.md): create a private profile,
    prepare a pinned image and render restricted workspace manifests.
 4. Complete the [private evaluation and acceptance process](assurance/PRIVATE-EVAL.md)
@@ -65,7 +68,7 @@ the translated upstream READMEs describe a different distribution.
 |---|---|---|
 | Model policy | Protected administrator policy; fixed internal provider and model; reviewed cloud entry points disabled | Actual gateway/model restrictions, including requests made directly from shell |
 | Remote features | Reviewed telemetry export, sharing, public catalogue, dynamic integrations and update paths disabled in the patched CLI profile | Observe effective runtime egress; review changes and all image dependencies |
-| Build | Four patch files, pinned baseline, regression tests, typechecks, Linux binary and checksum manifests | Final runtime image, SBOM, vulnerability/licence review and artifact signing |
+| Build | Numbered patch series, pinned baseline, regression tests, typechecks, CLI/TUI binaries, native Windows desktop packaging and checksum manifests | Final runtime image, SBOM, vulnerability/licence review and artifact signing |
 | Installation | Offline Python tool validates configuration, verifies the binary hash, creates an image context and Kubernetes manifests | Customer registry, CNI, encrypted storage, runtime tools and access broker |
 | Workspace | Non-root process, protected image policy, separate persistent workspace/state, no service-account token, gateway-only network policy | Effective network and tenant isolation, backup/restore and identity lifecycle |
 | Evaluation | Offline Ed25519 report verification; exact profile and suite binding; 13 mandatory gates; expiry and failure checks | Private corpus/runner, real execution evidence, independent review and customer approval |
@@ -76,7 +79,10 @@ CI does not establish customer production acceptance. No completed private eval,
 production deployment, universal safety guarantee or compliance certification is
 claimed. The private corpus and remediation implementation are not included here.
 
-## Windows and deployment topology
+## Windows desktop, TUI and deployment topology
+
+Open a successful [Enterprise build and release run](https://github.com/keugenek/opencode-enterprise/actions/workflows/enterprise-release.yml)
+and use its **Artifacts** section. Console and desktop downloads are separate.
 
 ![Enterprise deployment: VPN, proxy, LLM router, shared plan and isolated caches](delivery/diagrams/deployment.png)
 
@@ -84,6 +90,13 @@ Native Windows x64 CLI/TUI support is supplied by patch 0005 and the
 `Test and build Windows x64` job. Download `enterprise-windows-x64` only from a
 successful run. The ZIP contains administrator installation instructions; Windows
 requires protected NTFS policy and a managed endpoint. This is a pilot candidate.
+
+The native **OpenCode Enterprise Desktop** application is a separate Windows x64
+artifact: `enterprise-desktop-windows-x64`. It bundles Electron, the user interface
+and the restricted V1 engine; no separate CLI, Node/Bun installation or web server
+is required. Download its versioned installer or complete portable ZIP only after
+the desktop job passes. Both are unsigned public CI candidates. See the
+[desktop installation and acceptance guide](delivery/DESKTOP.md).
 
 See [deployment architecture](delivery/DEPLOYMENT-ARCHITECTURE.md) for the corporate
 VPN, internal proxy, fixed-model LLM router, vLLM replicas, shared development plan
@@ -114,7 +127,7 @@ network and access controls; an application policy alone is not a sandbox.
 | Canonical repository | [keugenek/opencode-enterprise](https://github.com/keugenek/opencode-enterprise) |
 | Upstream | [anomalyco/opencode](https://github.com/anomalyco/opencode) |
 | Category | Self-hosted AI coding agent; enterprise coding harness; on-premises developer tooling |
-| Supported candidate | Linux x64/glibc and Windows x64 AVX2 CLI/TUI; one fixed internal model |
+| Candidate interfaces | Linux x64/glibc and Windows x64 AVX2 CLI/TUI; Windows x64 native Electron desktop; one fixed internal model |
 | Installation | [MVP toolkit](mvp/README.md); enterprise patches must be applied before building |
 | Evidence | [Security review](enterprise-patches/SECURITY-REVIEW.md), [private eval contract](assurance/PRIVATE-EVAL.md), [compliance matrix](assurance/COMPLIANCE.md) |
 | Public licence | [MIT](LICENSE), with [commercial delivery boundaries](LICENSING.md) |
@@ -125,7 +138,8 @@ network and access controls; an application policy alone is not a sandbox.
 ### Is this an OpenWebUI enterprise fork?
 
 This is an OpenCode coding-harness fork, not an OpenWebUI chat frontend.
-The supported candidate interfaces are the Linux and Windows CLI/TUI.
+The candidate interfaces are Linux and Windows CLI/TUI plus a native Windows
+desktop application. The desktop is an installed application with a bundled engine.
 
 ### Can I use vLLM with a private model?
 
@@ -155,7 +169,8 @@ evidence and independent customer approval remain required.
 
 [Enterprise CI](.github/workflows/enterprise-release.yml) applies the patches,
 runs their regression tests, typechecks affected packages, builds and smoke-tests
-the restricted binary, then packages the source, patches and MVP toolkit.
+the restricted console binaries and native Windows desktop application, then packages
+the source, patches and MVP toolkit with distinct manifests/checksums per profile.
 [Tooling CI](.github/workflows/mvp-validation.yml) tests the offline installer and
 signature/report rejection paths without customer data or private signing keys.
 Tagged `enterprise-v*` builds are prerelease candidates.

@@ -1,0 +1,421 @@
+From e92c6e1d16de9c9b37d622911edbe3a2c991fa9d Mon Sep 17 00:00:00 2001
+From: Enterprise CI <ci@localhost>
+Date: Mon, 21 Sep 2026 12:35:39 +0200
+Subject: [PATCH] fix(enterprise): enforce shell approvals and session-scoped
+ denials
+
+---
+ packages/opencode/src/permission/index.ts     |  27 ++-
+ packages/opencode/src/tool/shell.ts           |  36 +++
+ .../test/enterprise/execution-guards.test.ts  | 214 ++++++++++++++++++
+ .../opencode/test/permission/next.test.ts     |   4 +-
+ 4 files changed, 273 insertions(+), 8 deletions(-)
+ create mode 100644 packages/opencode/test/enterprise/execution-guards.test.ts
+
+diff --git a/packages/opencode/src/permission/index.ts b/packages/opencode/src/permission/index.ts
+index 1591e0b..7fca612 100644
+--- a/packages/opencode/src/permission/index.ts
++++ b/packages/opencode/src/permission/index.ts
+@@ -18,12 +18,13 @@ export interface Interface {
+ 
+ interface PendingEntry {
+   info: PermissionV1.Request
++  ruleset: PermissionV1.Ruleset
+   deferred: Deferred.Deferred<void, PermissionV1.RejectedError | PermissionV1.CorrectedError>
+ }
+ 
+ interface State {
+   pending: Map<PermissionV1.ID, PendingEntry>
+-  approved: PermissionV1.Rule[]
++  approved: Map<PermissionV1.Request["sessionID"], PermissionV1.Rule[]>
+ }
+ 
+ export function evaluate(permission: string, pattern: string, ...rulesets: PermissionV1.Ruleset[]): PermissionV1.Rule {
+@@ -41,6 +42,18 @@ export function evaluate(permission: string, pattern: string, ...rulesets: Permi
+ 
+ export class Service extends Context.Service<Service, Interface>()("@opencode/Permission") {}
+ 
++function withApproval(
++  permission: string,
++  pattern: string,
++  ruleset: PermissionV1.Ruleset,
++  approved: PermissionV1.Ruleset,
++) {
++  // Configured rules keep their ordered specificity. A saved approval only
++  // answers an effective `ask`; it must never replace an effective `deny`.
++  const rule = evaluate(permission, pattern, ruleset)
++  return rule.action === "ask" ? evaluate(permission, pattern, approved) : rule
++}
++
+ const layer = Layer.effect(
+   Service,
+   Effect.gen(function* () {
+@@ -50,7 +63,7 @@ const layer = Layer.effect(
+         void ctx
+         const state = {
+           pending: new Map<PermissionV1.ID, PendingEntry>(),
+-          approved: [],
++          approved: new Map<PermissionV1.Request["sessionID"], PermissionV1.Rule[]>(),
+         }
+ 
+         yield* Effect.addFinalizer(() =>
+@@ -72,7 +85,7 @@ const layer = Layer.effect(
+       let needsAsk = false
+ 
+       for (const pattern of request.patterns) {
+-        const rule = evaluate(request.permission, pattern, ruleset, approved)
++        const rule = withApproval(request.permission, pattern, ruleset, approved.get(request.sessionID) ?? [])
+         yield* Effect.logInfo("evaluated", { permission: request.permission, pattern, action: rule })
+         if (rule.action === "deny") {
+           return yield* new PermissionV1.DeniedError({
+@@ -98,7 +111,7 @@ const layer = Layer.effect(
+       yield* Effect.logInfo("asking", { id, permission: info.permission, patterns: info.patterns })
+ 
+       const deferred = yield* Deferred.make<void, PermissionV1.RejectedError | PermissionV1.CorrectedError>()
+-      pending.set(id, { info, deferred })
++      pending.set(id, { info, ruleset: [...ruleset], deferred })
+       yield* events.publish(Event.Asked, info)
+       return yield* Effect.ensuring(
+         Deferred.await(deferred),
+@@ -144,8 +157,10 @@ const layer = Layer.effect(
+       yield* Deferred.succeed(existing.deferred, undefined)
+       if (input.reply === "once") return
+ 
++      const sessionApproval = approved.get(existing.info.sessionID) ?? []
++      approved.set(existing.info.sessionID, sessionApproval)
+       for (const pattern of existing.info.always) {
+-        approved.push({
++        sessionApproval.push({
+           permission: existing.info.permission,
+           pattern,
+           action: "allow",
+@@ -155,7 +170,7 @@ const layer = Layer.effect(
+       for (const [id, item] of pending.entries()) {
+         if (item.info.sessionID !== existing.info.sessionID) continue
+         const ok = item.info.patterns.every(
+-          (pattern) => evaluate(item.info.permission, pattern, approved).action === "allow",
++          (pattern) => withApproval(item.info.permission, pattern, item.ruleset, sessionApproval).action === "allow",
+         )
+         if (!ok) continue
+         pending.delete(id)
+diff --git a/packages/opencode/src/tool/shell.ts b/packages/opencode/src/tool/shell.ts
+index 1e4423e..b028fe2 100644
+--- a/packages/opencode/src/tool/shell.ts
++++ b/packages/opencode/src/tool/shell.ts
+@@ -9,6 +9,7 @@ import { lazy } from "@/util/lazy"
+ import { Language, type Node } from "web-tree-sitter"
+ 
+ import { FSUtil } from "@opencode-ai/core/fs-util"
++import { Enterprise } from "@opencode-ai/core/enterprise/policy"
+ import { fileURLToPath } from "url"
+ import { Config } from "@/config/config"
+ import { RuntimeFlags } from "@/effect/runtime-flags"
+@@ -260,7 +261,33 @@ const parse = Effect.fn("ShellTool.parse")(function* (command: string, ps: boole
+   return tree
+ })
+ 
++function validateEnterpriseCommand(root: Node) {
++  if (!Enterprise.enabled) return
++  if (root.hasError || commands(root).length === 0) {
++    throw new Error("Enterprise shell policy: command syntax cannot be safely analyzed; execution refused.")
++  }
++  // Redirects are deliberately outside this initial enterprise shell profile.
++  // The parser can omit them from `command` nodes, including bare truncations.
++  // Use the permission-checked file editing tools instead.
++  const pending = [root]
++  while (pending.length) {
++    const node = pending.pop()!
++    if (node.type.includes("redirect") || node.type.includes("heredoc") || node.type === "process_substitution") {
++      throw new Error("Enterprise shell policy: redirections are disabled; use the file editing tools.")
++    }
++    pending.push(...node.namedChildren.filter((child): child is Node => child !== null))
++  }
++}
++
+ const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan, input: { command: string }) {
++  if (Enterprise.enabled) {
++    // Always check the complete input, even when the parser only found `cd`,
++    // assignments or a subset of nested commands. Approval precedes spawning.
++    scan.patterns.add(input.command)
++    // Shell text is not a safe wildcard approval pattern (for example `echo *`
++    // also matches a later compound command). Require a fresh decision.
++    scan.always.clear()
++  }
+   if (scan.dirs.size > 0) {
+     const directories = Array.from(scan.dirs)
+     const globs = directories.map((dir) => {
+@@ -358,6 +385,11 @@ export const ShellTool = Tool.define(
+     const resolvePath = Effect.fn("ShellTool.resolvePath")(function* (text: string, root: string, shell: string) {
+       if (process.platform === "win32") {
+         if (Shell.posix(shell) && text.startsWith("/") && FSUtil.windowsPath(text) === text) {
++          if (Enterprise.enabled) {
++            throw new Error(
++              "Enterprise shell policy: use native Windows paths; pre-approval path helper execution is disabled.",
++            )
++          }
+           const file = yield* cygpath(shell, text)
+           if (file) return file
+         }
+@@ -608,6 +640,9 @@ export const ShellTool = Tool.define(
+           parameters: prompt.parameters,
+           execute: (params: Parameters, ctx: Tool.Context) =>
+             Effect.gen(function* () {
++              if (Enterprise.enabled && !["bash", "sh", "dash", "powershell", "pwsh"].includes(name)) {
++                throw new Error(`Enterprise shell policy: unsupported shell ${name}; use Bash or PowerShell.`)
++              }
+               const instanceCtx = yield* InstanceState.context
+               const cwd = params.workdir
+                 ? yield* resolvePath(params.workdir, instanceCtx.directory, shell)
+@@ -622,6 +657,7 @@ export const ShellTool = Tool.define(
+                   const tree = yield* Effect.acquireRelease(parse(params.command, ps), (tree) =>
+                     Effect.sync(() => tree.delete()),
+                   )
++                  validateEnterpriseCommand(tree.rootNode)
+                   const scan = yield* collect(tree.rootNode, cwd, ps, shell, instanceCtx)
+                   if (!containsPath(cwd, instanceCtx)) scan.dirs.add(cwd)
+                   yield* ask(ctx, scan, params)
+diff --git a/packages/opencode/test/enterprise/execution-guards.test.ts b/packages/opencode/test/enterprise/execution-guards.test.ts
+new file mode 100644
+index 0000000..63e8cf1
+--- /dev/null
++++ b/packages/opencode/test/enterprise/execution-guards.test.ts
+@@ -0,0 +1,214 @@
++import { describe, expect, test } from "bun:test"
++import { existsSync } from "node:fs"
++import path from "node:path"
++import { Cause, Effect, Exit, Fiber, Layer } from "effect"
++import { LayerNode } from "@opencode-ai/core/effect/layer-node"
++import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
++import { FSUtil } from "@opencode-ai/core/fs-util"
++import { PermissionV1 } from "@opencode-ai/core/v1/permission"
++import { Shell } from "@opencode-ai/core/shell"
++import { Config } from "@/config/config"
++import { Agent } from "@/agent/agent"
++import { Plugin } from "@/plugin"
++import { Permission } from "@/permission"
++import { Truncate } from "@/tool/truncate"
++import { ShellTool } from "@/tool/shell"
++import { Tool } from "@/tool/tool"
++import { RuntimeFlags } from "@/effect/runtime-flags"
++import { MessageID, SessionID } from "@/session/schema"
++import { TestInstance, testInstanceStoreLayer, tmpdirScoped } from "../fixture/fixture"
++import { testEffect } from "../lib/effect"
++
++// These integration tests deliberately use the real parser, permission service
++// and process spawner. CI installs the administrator-owned policy before them.
++const it = testEffect(
++  Layer.mergeAll(
++    LayerNode.compile(
++      LayerNode.group([
++        CrossSpawnSpawner.node,
++        FSUtil.node,
++        Plugin.node,
++        Truncate.node,
++        Config.node,
++        Agent.node,
++        RuntimeFlags.node,
++        Permission.node,
++      ]),
++    ),
++    testInstanceStoreLayer,
++  ),
++)
++
++const context = (
++  permission: Permission.Interface,
++  sessionID: SessionID,
++  ruleset: PermissionV1.Ruleset,
++): Tool.Context => ({
++  sessionID,
++  messageID: MessageID.make("msg_enterprise_execution"),
++  callID: "enterprise-execution",
++  agent: "build",
++  abort: AbortSignal.any([]),
++  messages: [],
++  metadata: () => Effect.void,
++  ask: (request) => permission.ask({ ...request, sessionID, ruleset }).pipe(Effect.orDie),
++})
++
++const init = Effect.fn("EnterpriseExecutionTest.init")(function* () {
++  const tool = yield* ShellTool
++  return yield* tool.init()
++})
++
++const failure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
++  Effect.gen(function* () {
++    const exit = yield* Effect.exit(effect)
++    expect(Exit.isFailure(exit)).toBe(true)
++    if (Exit.isFailure(exit)) return String(Cause.squash(exit.cause))
++    throw new Error("expected denied execution")
++  })
++
++const pending = (permission: Permission.Interface, sessionID: SessionID) =>
++  Effect.gen(function* () {
++    while (true) {
++      const request = (yield* permission.list()).find((item) => item.sessionID === sessionID)
++      if (request) return request
++      yield* Effect.yieldNow
++    }
++  }).pipe(
++    Effect.timeoutOrElse({
++      duration: "5 seconds",
++      orElse: () => Effect.die(new Error("permission request was bypassed or never published")),
++    }),
++  )
++
++const approve = (permission: Permission.Interface, sessionID: SessionID) =>
++  Effect.gen(function* () {
++    const fiber = yield* permission
++      .ask({ sessionID, permission: "bash", patterns: ["echo initial"], always: ["*"], metadata: {}, ruleset: [] })
++      .pipe(Effect.forkScoped)
++    const request = yield* pending(permission, sessionID)
++    yield* permission.reply({ requestID: request.id, reply: "always" })
++    yield* Fiber.join(fiber)
++  })
++
++const selected = () => Shell.ps(Shell.acceptable())
++const mutate = () => (selected() ? "Set-Content -Path marker -Value changed" : "touch marker")
++const parent = SessionID.make("ses_enterprise_parent")
++const child = SessionID.make("ses_enterprise_child")
++const deny: PermissionV1.Ruleset = [{ permission: "bash", pattern: "*", action: "deny" }]
++
++describe("enterprise execution guards", () => {
++  for (const input of ["> marker", ">> marker", "echo changed > marker", "echo changed >> marker"]) {
++    it.instance(`refuses redirection without creating or truncating files: ${input}`, () =>
++      Effect.gen(function* () {
++        const instance = yield* TestInstance
++        const permission = yield* Permission.Service
++        const tool = yield* init()
++        const file = path.join(instance.directory, "marker")
++        yield* Effect.promise(() => Bun.write(file, "original"))
++        const error = yield* failure(
++          tool.execute(
++            { command: input },
++            context(permission, parent, [{ permission: "bash", pattern: "*", action: "allow" }]),
++          ),
++        )
++        expect(error).toContain("Enterprise shell policy")
++        expect(yield* Effect.promise(() => Bun.file(file).text())).toBe("original")
++      }),
++    )
++  }
++
++  it.instance("refuses external redirection before mutation", () =>
++    Effect.gen(function* () {
++      const outside = yield* tmpdirScoped()
++      const file = path.join(outside, "marker")
++      const permission = yield* Permission.Service
++      const tool = yield* init()
++      const error = yield* failure(
++        tool.execute({ command: `echo changed > "${file}"` }, context(permission, parent, [])),
++      )
++      expect(error).toContain("Enterprise shell policy")
++      expect(existsSync(file)).toBe(false)
++      expect(yield* permission.list()).toHaveLength(0)
++    }),
++  )
++
++  for (const input of ["", "# comment only", "echo unclosed '", "echo initial; ("]) {
++    it.instance(`rejects commandless or invalid syntax: ${JSON.stringify(input)}`, () =>
++      Effect.gen(function* () {
++        const permission = yield* Permission.Service
++        const tool = yield* init()
++        expect(yield* failure(tool.execute({ command: input }, context(permission, parent, [])))).toContain(
++          "Enterprise shell policy",
++        )
++        expect(yield* permission.list()).toHaveLength(0)
++      }),
++    )
++  }
++
++  it.instance("cd-only input still checks bash permission", () =>
++    Effect.gen(function* () {
++      const permission = yield* Permission.Service
++      const tool = yield* init()
++      expect(yield* failure(tool.execute({ command: "cd ." }, context(permission, parent, deny)))).toContain(
++        "prevents you from using",
++      )
++    }),
++  )
++
++  for (const sessionID of [parent, child]) {
++    it.instance(`saved parent approval cannot override effective deny in ${sessionID}`, () =>
++      Effect.gen(function* () {
++        const instance = yield* TestInstance
++        const permission = yield* Permission.Service
++        const tool = yield* init()
++        yield* approve(permission, parent)
++        const error = yield* failure(tool.execute({ command: mutate() }, context(permission, sessionID, deny)))
++        expect(error).toContain("prevents you from using")
++        expect(existsSync(path.join(instance.directory, "marker"))).toBe(false)
++        expect(yield* permission.list()).toHaveLength(0)
++      }),
++    )
++  }
++
++  it.instance("saved parent approval does not silently authorize a child session", () =>
++    Effect.gen(function* () {
++      const instance = yield* TestInstance
++      const permission = yield* Permission.Service
++      const tool = yield* init()
++      yield* approve(permission, parent)
++      const execution = yield* tool
++        .execute({ command: mutate() }, context(permission, child, []))
++        .pipe(Effect.forkScoped)
++      const request = yield* pending(permission, child)
++      expect(existsSync(path.join(instance.directory, "marker"))).toBe(false)
++      yield* permission.reply({ requestID: request.id, reply: "reject" })
++      expect(yield* failure(Fiber.join(execution))).toContain("rejected")
++      expect(existsSync(path.join(instance.directory, "marker"))).toBe(false)
++    }),
++  )
++
++  it.instance("approved ordinary command executes through the real process spawner", () =>
++    Effect.gen(function* () {
++      const permission = yield* Permission.Service
++      const tool = yield* init()
++      const execution = yield* tool
++        .execute({ command: "echo enterprise-ok" }, context(permission, parent, []))
++        .pipe(Effect.forkScoped)
++      const request = yield* pending(permission, parent)
++      expect(request.permission).toBe("bash")
++      expect(request.patterns).toContain("echo enterprise-ok")
++      expect(request.always).toEqual([])
++      yield* permission.reply({ requestID: request.id, reply: "once" })
++      const result = yield* Fiber.join(execution)
++      expect(result.metadata.exit).toBe(0)
++      expect(result.output).toContain("enterprise-ok")
++    }),
++  )
++
++  test("configured specific allow still overrides its earlier fallback deny", () => {
++    const ruleset = Permission.fromConfig({ bash: { "*": "deny", "git status": "allow" } })
++    expect(Permission.evaluate("bash", "git status", ruleset).action).toBe("allow")
++    expect(Permission.evaluate("bash", "git clean -fd", ruleset).action).toBe("deny")
++  })
++})
+diff --git a/packages/opencode/test/permission/next.test.ts b/packages/opencode/test/permission/next.test.ts
+index 2f2ce98..69454c5 100644
+--- a/packages/opencode/test/permission/next.test.ts
++++ b/packages/opencode/test/permission/next.test.ts
+@@ -774,7 +774,7 @@ it.instance(
+ )
+ 
+ it.instance(
+-  "reply - always persists approval and resolves",
++  "reply - always persists approval and resolves within the same session",
+   () =>
+     Effect.gen(function* () {
+       const fiber = yield* ask({
+@@ -792,7 +792,7 @@ it.instance(
+       yield* Fiber.join(fiber)
+ 
+       const result = yield* ask({
+-        sessionID: SessionID.make("session_test2"),
++        sessionID: SessionID.make("session_test"),
+         permission: "bash",
+         patterns: ["ls"],
+         metadata: {},
+-- 
+2.51.1
+

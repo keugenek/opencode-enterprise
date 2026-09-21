@@ -1,0 +1,3909 @@
+From 7af75968d153a8618dda7cd554ab0a15aee194ee Mon Sep 17 00:00:00 2001
+From: Enterprise Engineering <enterprise@localhost>
+Date: Mon, 21 Sep 2026 12:59:42 +0200
+Subject: [PATCH] feat(desktop): package the standard Windows client with
+ enterprise guards
+
+---
+ .../app/src/components/dialog-settings.tsx    |  65 ++++---
+ packages/app/src/components/external-link.tsx |   2 +
+ packages/app/src/components/prompt-input.tsx  | 113 ++++++------
+ .../components/prompt-input/attachments.ts    |   7 +-
+ .../prompt-input/build-request-parts.test.ts  |  41 ++++-
+ .../prompt-input/build-request-parts.ts       |  24 ++-
+ .../app/src/components/prompt-input/submit.ts |   3 +-
+ .../src/components/session/session-header.tsx |  31 ++--
+ .../app/src/components/settings-general.tsx   |  88 +++++-----
+ .../app/src/components/status-popover.tsx     |   3 +
+ packages/app/src/constants/file-picker.ts     |   4 +-
+ packages/app/src/context/command.tsx          |   8 +-
+ packages/app/src/context/highlights.tsx       |   2 +
+ packages/app/src/context/local.tsx            |   9 +-
+ packages/app/src/context/models.tsx           |   2 +
+ packages/app/src/context/permission.tsx       |   9 +
+ packages/app/src/context/server.test.ts       |  42 +++++
+ packages/app/src/context/server.tsx           |  26 ++-
+ packages/app/src/context/settings.tsx         |   7 +-
+ packages/app/src/context/terminal.tsx         |   7 +-
+ packages/app/src/enterprise-sentry.ts         |   4 +
+ packages/app/src/entry.tsx                    |  13 +-
+ packages/app/src/env.d.ts                     |   2 +
+ packages/app/src/i18n/en.ts                   |   1 +
+ packages/app/src/index.ts                     |   1 +
+ packages/app/src/pages/error.tsx              |  27 +--
+ packages/app/src/pages/home/legacy-home.tsx   |   4 +-
+ packages/app/src/pages/layout.tsx             |  16 +-
+ packages/app/src/pages/layout/helpers.ts      |   2 +
+ .../app/src/pages/layout/sidebar-shell.tsx    |  21 ++-
+ .../composer/session-composer-state.ts        |   2 +
+ .../composer/session-permission-dock.tsx      |  19 +-
+ packages/app/src/utils/enterprise.test.ts     |  55 ++++++
+ packages/app/src/utils/enterprise.ts          |  26 +++
+ packages/app/src/utils/server-protocol.ts     |   2 +
+ .../src/utils/terminal-websocket-url.test.ts  |  18 ++
+ .../app/src/utils/terminal-websocket-url.ts   |  10 +-
+ packages/app/vite.config.ts                   |  10 +-
+ packages/app/vite.js                          |   1 +
+ packages/desktop/electron-builder.config.ts   |  32 +++-
+ packages/desktop/electron.vite.config.ts      |  34 +++-
+ packages/desktop/scripts/copy-icons.ts        |   4 +-
+ packages/desktop/scripts/copy-metainfo.ts     |  41 +++--
+ .../desktop/scripts/enterprise-build.test.ts  |  23 +++
+ packages/desktop/scripts/prebuild.ts          |   5 +
+ packages/desktop/scripts/predev.ts            |   6 +-
+ packages/desktop/scripts/utils.ts             |   5 +-
+ packages/desktop/src/main/constants.ts        |   3 +-
+ packages/desktop/src/main/enterprise.test.ts  |  62 +++++++
+ packages/desktop/src/main/enterprise.ts       |  54 ++++++
+ packages/desktop/src/main/env.d.ts            |   1 +
+ packages/desktop/src/main/index.ts            |  34 ++--
+ packages/desktop/src/main/ipc.ts              | 164 ++++++++++--------
+ packages/desktop/src/main/logging.ts          |   3 +
+ packages/desktop/src/main/server.ts           |  14 +-
+ packages/desktop/src/main/sidecar.ts          |  17 ++
+ packages/desktop/src/main/store.ts            |   2 +
+ packages/desktop/src/main/windows.ts          |  30 +++-
+ packages/desktop/src/main/wsl/ipc.ts          |   3 +-
+ packages/desktop/src/renderer/index.tsx       |  34 ++--
+ packages/desktop/src/renderer/onboarding.tsx  |   6 +-
+ packages/opencode/script/build-node.ts        |  10 +-
+ packages/opencode/src/cli/cmd/run.ts          |   7 +-
+ packages/opencode/src/cli/cmd/tui.ts          |  38 +---
+ packages/opencode/src/cli/tui/worker.ts       |   2 +
+ packages/opencode/src/node.ts                 |  31 +++-
+ .../opencode/src/server/enterprise-desktop.ts | 121 +++++++++++++
+ .../httpapi/middleware/workspace-routing.ts   |  10 ++
+ packages/opencode/src/server/server.ts        |  29 +++-
+ packages/opencode/src/server/shared/ui.ts     |   2 +
+ packages/opencode/src/session/llm.ts          |   9 +
+ packages/opencode/src/session/prompt.ts       |  25 +++
+ .../enterprise/fixtures/tui-network-worker.ts |   9 +
+ .../test/enterprise/remote-input.test.ts      | 162 +++++++++++++++++
+ .../test/enterprise/tui-network.test.ts       |  94 ++++++++++
+ .../test/server/enterprise-desktop.test.ts    | 103 +++++++++++
+ 76 files changed, 1605 insertions(+), 351 deletions(-)
+ create mode 100644 packages/app/src/enterprise-sentry.ts
+ create mode 100644 packages/app/src/utils/enterprise.test.ts
+ create mode 100644 packages/app/src/utils/enterprise.ts
+ create mode 100644 packages/desktop/scripts/enterprise-build.test.ts
+ create mode 100644 packages/desktop/src/main/enterprise.test.ts
+ create mode 100644 packages/desktop/src/main/enterprise.ts
+ create mode 100644 packages/opencode/src/server/enterprise-desktop.ts
+ create mode 100644 packages/opencode/test/enterprise/fixtures/tui-network-worker.ts
+ create mode 100644 packages/opencode/test/enterprise/remote-input.test.ts
+ create mode 100644 packages/opencode/test/enterprise/tui-network.test.ts
+ create mode 100644 packages/opencode/test/server/enterprise-desktop.test.ts
+
+diff --git a/packages/app/src/components/dialog-settings.tsx b/packages/app/src/components/dialog-settings.tsx
+index b554fa7..935f34d 100644
+--- a/packages/app/src/components/dialog-settings.tsx
++++ b/packages/app/src/components/dialog-settings.tsx
+@@ -1,4 +1,5 @@
+-import { Component, createSignal, startTransition } from "solid-js"
++import { enterprise } from "@/utils/enterprise"
++import { Component, Show, createSignal, startTransition } from "solid-js"
+ import { Dialog } from "@opencode-ai/ui/dialog"
+ import { Tabs } from "@opencode-ai/ui/tabs"
+ import { Icon } from "@opencode-ai/ui/icon"
+@@ -15,7 +16,9 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
+   const language = useLanguage()
+   const platform = usePlatform()
+   const dialog = useDialog()
+-  const [tab, setTab] = createSignal(props.defaultValue ?? "general")
++  const [tab, setTab] = createSignal(
++    enterprise && props.defaultValue !== "shortcuts" ? "general" : (props.defaultValue ?? "general"),
++  )
+ 
+   const showProviders = () => {
+     void dialog.show(() => <DialogSettings defaultValue="providers" />)
+@@ -45,24 +48,32 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
+                       <Icon name="keyboard" />
+                       {language.t("settings.tab.shortcuts")}
+                     </Tabs.Trigger>
+-                    <Tabs.Trigger value="servers">
+-                      <Icon name="server" />
+-                      {language.t("status.popover.tab.servers")}
+-                    </Tabs.Trigger>
++                    <Show when={!enterprise}>
++                      <Tabs.Trigger value="servers">
++                        <Icon name="server" />
++                        {language.t("status.popover.tab.servers")}
++                      </Tabs.Trigger>
++                    </Show>
+                   </div>
+                 </div>
+ 
+                 <div class="flex flex-col gap-1.5">
+-                  <Tabs.SectionTitle>{language.t("settings.section.server")}</Tabs.SectionTitle>
++                  <Show when={!enterprise}>
++                    <Tabs.SectionTitle>{language.t("settings.section.server")}</Tabs.SectionTitle>
++                  </Show>
+                   <div class="flex flex-col gap-1.5 w-full">
+-                    <Tabs.Trigger value="providers">
+-                      <Icon name="providers" />
+-                      {language.t("settings.providers.title")}
+-                    </Tabs.Trigger>
+-                    <Tabs.Trigger value="models">
+-                      <Icon name="models" />
+-                      {language.t("settings.models.title")}
+-                    </Tabs.Trigger>
++                    <Show when={!enterprise}>
++                      <Tabs.Trigger value="providers">
++                        <Icon name="providers" />
++                        {language.t("settings.providers.title")}
++                      </Tabs.Trigger>
++                    </Show>
++                    <Show when={!enterprise}>
++                      <Tabs.Trigger value="models">
++                        <Icon name="models" />
++                        {language.t("settings.models.title")}
++                      </Tabs.Trigger>
++                    </Show>
+                   </div>
+                 </div>
+               </div>
+@@ -79,15 +90,21 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
+         <Tabs.Content value="shortcuts" class="no-scrollbar">
+           <SettingsKeybinds />
+         </Tabs.Content>
+-        <Tabs.Content value="servers" class="no-scrollbar">
+-          <SettingsServers />
+-        </Tabs.Content>
+-        <Tabs.Content value="providers" class="no-scrollbar">
+-          <SettingsProviders onBack={showProviders} />
+-        </Tabs.Content>
+-        <Tabs.Content value="models" class="no-scrollbar">
+-          <SettingsModels />
+-        </Tabs.Content>
++        <Show when={!enterprise}>
++          <Tabs.Content value="servers" class="no-scrollbar">
++            <SettingsServers />
++          </Tabs.Content>
++        </Show>
++        <Show when={!enterprise}>
++          <Tabs.Content value="providers" class="no-scrollbar">
++            <SettingsProviders onBack={showProviders} />
++          </Tabs.Content>
++        </Show>
++        <Show when={!enterprise}>
++          <Tabs.Content value="models" class="no-scrollbar">
++            <SettingsModels />
++          </Tabs.Content>
++        </Show>
+       </Tabs>
+     </Dialog>
+   )
+diff --git a/packages/app/src/components/external-link.tsx b/packages/app/src/components/external-link.tsx
+index 133e752..a0238bf 100644
+--- a/packages/app/src/components/external-link.tsx
++++ b/packages/app/src/components/external-link.tsx
+@@ -1,3 +1,4 @@
++import { enterprise } from "@/utils/enterprise"
+ import { ComponentProps, splitProps } from "solid-js"
+ 
+ export interface ExternalLinkProps extends Omit<ComponentProps<"a">, "href"> {
+@@ -5,6 +6,7 @@ export interface ExternalLinkProps extends Omit<ComponentProps<"a">, "href"> {
+ }
+ 
+ export function ExternalLink(props: ExternalLinkProps) {
++  if (enterprise) return null
+   const [local, rest] = splitProps(props, ["href", "children", "class", "target", "rel"])
+ 
+   return (
+diff --git a/packages/app/src/components/prompt-input.tsx b/packages/app/src/components/prompt-input.tsx
+index 41cf7d3..af29715 100644
+--- a/packages/app/src/components/prompt-input.tsx
++++ b/packages/app/src/components/prompt-input.tsx
+@@ -1,3 +1,4 @@
++import { enterprise, enterpriseDesktop } from "@/utils/enterprise"
+ import { useFilteredList } from "@opencode-ai/ui/hooks"
+ import { useSpring } from "@opencode-ai/ui/motion-spring"
+ import {
+@@ -434,6 +435,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
+   }
+ 
+   const setMode = (mode: "normal" | "shell") => {
++    if (enterprise && !enterpriseDesktop && mode === "shell") return
+     setStore("mode", mode)
+     setStore({ popover: null, slashMenu: false, slashMenuQuery: "" })
+     requestAnimationFrame(() => editorRef?.focus())
+@@ -1215,7 +1217,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
+       resetHistoryNavigation: () => {
+         resetHistoryNavigation(true)
+       },
+-      setMode: (mode) => setStore("mode", mode),
++      setMode: (mode) => setStore("mode", enterprise && !enterpriseDesktop ? "normal" : mode),
+       setPopover: (popover) => {
+         if (!popover) return closePopover()
+         setStore({ popover, slashMenu: false, slashMenuQuery: "" })
+@@ -1255,7 +1257,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
+       }
+     }
+ 
+-    if (event.key === "!" && store.mode === "normal") {
++    if ((!enterprise || enterpriseDesktop) && event.key === "!" && store.mode === "normal") {
+       const cursorPosition = getCursorPosition(editorRef)
+       if (cursorPosition === 0) {
+         setStore("mode", "shell")
+@@ -1681,57 +1683,32 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
+                       classList={{ "animate-in fade-in duration-300": providersShouldFadeIn() }}
+                     >
+                       <Show
+-                        when={props.controls.model.paid}
++                        when={!enterprise}
+                         fallback={
+-                          <TooltipKeybind
+-                            placement="top"
+-                            gutter={4}
+-                            title={language.t("command.model.choose")}
+-                            keybind={command.keybind("model.choose")}
+-                          >
+-                            <Button
+-                              data-action="prompt-model"
+-                              as="div"
+-                              variant="ghost"
+-                              size="normal"
+-                              class="min-w-0 max-w-[320px] text-13-regular text-text-base group"
+-                              style={control()}
+-                              onClick={() => {
+-                                dialog.show(() => <DialogSelectModelUnpaid model={props.controls.model.selection} />)
+-                              }}
+-                            >
+-                              <Show when={props.controls.model.selection.current()?.provider?.id}>
+-                                <ProviderIcon
+-                                  id={props.controls.model.selection.current()?.provider?.id ?? ""}
+-                                  class="size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
+-                                  style={{ "will-change": "opacity", transform: "translateZ(0)" }}
+-                                />
+-                              </Show>
+-                              <span class="truncate">
+-                                {props.controls.model.selection.current()?.name ??
+-                                  language.t("dialog.model.select.title")}
+-                              </span>
+-                              <Icon name="chevron-down" size="small" class="shrink-0" />
+-                            </Button>
+-                          </TooltipKeybind>
++                          <span data-component="enterprise-model" class="truncate text-13-regular text-text-base">
++                            {props.controls.model.selection.current()?.name ?? language.t("common.loading")}
++                          </span>
+                         }
+                       >
+-                        <TooltipKeybind
+-                          placement="top"
+-                          gutter={4}
+-                          title={language.t("command.model.choose")}
+-                          keybind={command.keybind("model.choose")}
+-                        >
+-                          <ModelSelectorPopover
+-                            model={props.controls.model.selection}
+-                            trigger={(triggerProps) => (
++                        <Show
++                          when={props.controls.model.paid}
++                          fallback={
++                            <TooltipKeybind
++                              placement="top"
++                              gutter={4}
++                              title={language.t("command.model.choose")}
++                              keybind={command.keybind("model.choose")}
++                            >
+                               <Button
+-                                {...triggerProps}
++                                data-action="prompt-model"
++                                as="div"
+                                 variant="ghost"
+                                 size="normal"
+-                                style={control()}
+                                 class="min-w-0 max-w-[320px] text-13-regular text-text-base group"
+-                                data-action="prompt-model"
++                                style={control()}
++                                onClick={() => {
++                                  dialog.show(() => <DialogSelectModelUnpaid model={props.controls.model.selection} />)
++                                }}
+                               >
+                                 <Show when={props.controls.model.selection.current()?.provider?.id}>
+                                   <ProviderIcon
+@@ -1746,13 +1723,47 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
+                                 </span>
+                                 <Icon name="chevron-down" size="small" class="shrink-0" />
+                               </Button>
+-                            )}
+-                            onClose={restoreFocus}
+-                          />
+-                        </TooltipKeybind>
++                            </TooltipKeybind>
++                          }
++                        >
++                          <TooltipKeybind
++                            placement="top"
++                            gutter={4}
++                            title={language.t("command.model.choose")}
++                            keybind={command.keybind("model.choose")}
++                          >
++                            <ModelSelectorPopover
++                              model={props.controls.model.selection}
++                              trigger={(triggerProps) => (
++                                <Button
++                                  {...triggerProps}
++                                  variant="ghost"
++                                  size="normal"
++                                  style={control()}
++                                  class="min-w-0 max-w-[320px] text-13-regular text-text-base group"
++                                  data-action="prompt-model"
++                                >
++                                  <Show when={props.controls.model.selection.current()?.provider?.id}>
++                                    <ProviderIcon
++                                      id={props.controls.model.selection.current()?.provider?.id ?? ""}
++                                      class="size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
++                                      style={{ "will-change": "opacity", transform: "translateZ(0)" }}
++                                    />
++                                  </Show>
++                                  <span class="truncate">
++                                    {props.controls.model.selection.current()?.name ??
++                                      language.t("dialog.model.select.title")}
++                                  </span>
++                                  <Icon name="chevron-down" size="small" class="shrink-0" />
++                                </Button>
++                              )}
++                              onClose={restoreFocus}
++                            />
++                          </TooltipKeybind>
++                        </Show>
+                       </Show>
+                     </div>
+-                    <Show when={showVariantControl()}>
++                    <Show when={!enterprise && showVariantControl()}>
+                       <div
+                         data-component="prompt-variant-control"
+                         classList={{ "animate-in fade-in duration-300": providersShouldFadeIn() }}
+diff --git a/packages/app/src/components/prompt-input/attachments.ts b/packages/app/src/components/prompt-input/attachments.ts
+index 6f3ef57..ac659de 100644
+--- a/packages/app/src/components/prompt-input/attachments.ts
++++ b/packages/app/src/components/prompt-input/attachments.ts
+@@ -1,3 +1,4 @@
++import { enterprise } from "@/utils/enterprise"
+ import { onMount } from "solid-js"
+ import { makeEventListener } from "@solid-primitives/event-listener"
+ import { showToast } from "@/utils/toast"
+@@ -46,7 +47,7 @@ export function createPromptAttachmentsCore(input: PromptAttachmentsCoreInput) {
+   const add = async (file: File, toast = true, target = capture()) => {
+     if (!target) return false
+     const mime = await attachmentMime(file)
+-    if (!mime) {
++    if (!mime || (enterprise && mime !== "text/plain")) {
+       if (toast) input.warn?.()
+       return false
+     }
+@@ -157,7 +158,9 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
+     warn: () => {
+       showToast({
+         title: language.t("prompt.toast.pasteUnsupported.title"),
+-        description: language.t("prompt.toast.pasteUnsupported.description"),
++        description: language.t(
++          enterprise ? "enterprise.attachment.unsupported" : "prompt.toast.pasteUnsupported.description",
++        ),
+       })
+     },
+   })
+diff --git a/packages/app/src/components/prompt-input/build-request-parts.test.ts b/packages/app/src/components/prompt-input/build-request-parts.test.ts
+index ab84cb6..99f28be 100644
+--- a/packages/app/src/components/prompt-input/build-request-parts.test.ts
++++ b/packages/app/src/components/prompt-input/build-request-parts.test.ts
+@@ -1,6 +1,6 @@
+ import { describe, expect, test } from "bun:test"
+ import type { Prompt } from "@/context/prompt"
+-import { buildRequestParts } from "./build-request-parts"
++import { buildRequestParts, enterpriseRequestParts } from "./build-request-parts"
+ 
+ describe("buildRequestParts", () => {
+   test("builds typed request and optimistic parts without cast path", () => {
+@@ -394,3 +394,42 @@ describe("buildRequestParts", () => {
+     }
+   })
+ })
++
++describe("enterprise request parts", () => {
++  test("turns file references into text without triggering server file resolution", () => {
++    expect(
++      enterpriseRequestParts([
++        {
++          id: "text",
++          type: "text",
++          text: "Review these files",
++          synthetic: true,
++          ignored: true,
++          metadata: { injected: true },
++        },
++        {
++          id: "file",
++          type: "file",
++          mime: "text/plain",
++          url: "file:///workspace/src/a.ts?start=1&end=4",
++          filename: "a.ts",
++          source: { type: "file", path: "/secret", text: { value: "@a.ts", start: 0, end: 5 } },
++        },
++      ]),
++    ).toEqual([
++      { id: "text", type: "text", text: "Review these files" },
++      { id: "file", type: "text", text: "@/workspace/src/a.ts?start=1&end=4" },
++    ])
++  })
++
++  test("converts uploaded text to user text and drops images, agents and remote resources", () => {
++    expect(
++      enterpriseRequestParts([
++        { id: "text", type: "file", mime: "text/plain", url: "data:text/plain;base64,aGVsbG8=", filename: "a.txt" },
++        { id: "image", type: "file", mime: "image/png", url: "data:image/png;base64,YQ==", filename: "a.png" },
++        { id: "remote", type: "file", mime: "text/plain", url: "https://outside.example/secret" },
++        { id: "agent", type: "agent", name: "unsafe", source: { value: "@unsafe", start: 0, end: 7 } },
++      ]),
++    ).toEqual([{ id: "text", type: "text", text: "a.txt\nhello" }])
++  })
++})
+diff --git a/packages/app/src/components/prompt-input/build-request-parts.ts b/packages/app/src/components/prompt-input/build-request-parts.ts
+index a1e3448..4e172f9 100644
+--- a/packages/app/src/components/prompt-input/build-request-parts.ts
++++ b/packages/app/src/components/prompt-input/build-request-parts.ts
+@@ -1,3 +1,4 @@
++import { enterprise } from "@/utils/enterprise"
+ import { getFilename } from "@opencode-ai/core/util/path"
+ import { type AgentPartInput, type FilePartInput, type Part, type TextPartInput } from "@opencode-ai/sdk/v2/client"
+ import type { FileSelection } from "@/context/file"
+@@ -8,6 +9,24 @@ import { createCommentMetadata, formatCommentNote } from "@/utils/comment-note"
+ 
+ type PromptRequestPart = (TextPartInput | FilePartInput | AgentPartInput) & { id: string }
+ 
++// References remain plain text: only the agent's approved tools may read workspace files.
++// Do not let browser context silently invoke server-side file/source resolution.
++export function enterpriseRequestParts(parts: PromptRequestPart[]): PromptRequestPart[] {
++  return parts.flatMap<PromptRequestPart>((part) => {
++    if (part.type === "text") return [{ id: part.id, type: "text", text: part.text }]
++    if (part.type !== "file") return []
++    if (part.url.startsWith("file:") && URL.canParse(part.url)) {
++      const url = new URL(part.url)
++      return [{ id: part.id, type: "text", text: `@${decodeURI(url.pathname)}${url.search}` }]
++    }
++    if (/^data:text\/plain;base64,/.test(part.url)) {
++      const text = new TextDecoder().decode(Uint8Array.from(atob(part.url.split(",")[1]), (char) => char.charCodeAt(0)))
++      return [{ id: part.id, type: "text", text: `${part.filename ?? ""}\n${text}` }]
++    }
++    return []
++  })
++}
++
+ type ContextFile = {
+   key: string
+   type: "file"
+@@ -205,9 +224,10 @@ export function buildRequestParts(input: BuildRequestPartsInput) {
+   })
+ 
+   requestParts.push(...files, ...context, ...agents, ...images)
++  const parts = enterprise ? enterpriseRequestParts(requestParts) : requestParts
+ 
+   return {
+-    requestParts,
+-    optimisticParts: requestParts.map((part) => toOptimisticPart(part, input.sessionID, input.messageID)),
++    requestParts: parts,
++    optimisticParts: parts.map((part) => toOptimisticPart(part, input.sessionID, input.messageID)),
+   }
+ }
+diff --git a/packages/app/src/components/prompt-input/submit.ts b/packages/app/src/components/prompt-input/submit.ts
+index c82c3a4..3f06f3f 100644
+--- a/packages/app/src/components/prompt-input/submit.ts
++++ b/packages/app/src/components/prompt-input/submit.ts
+@@ -1,3 +1,4 @@
++import { enterprise, enterpriseDesktop } from "@/utils/enterprise"
+ import type { Message, Session } from "@opencode-ai/sdk/v2/client"
+ import { showToast } from "@/utils/toast"
+ import { base64Encode } from "@opencode-ai/core/util/encode"
+@@ -328,7 +329,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
+     const context = submission.context
+     const text = currentPrompt.map((part) => ("content" in part ? part.content : "")).join("")
+     const images = input.imageAttachments().slice()
+-    const mode = input.mode()
++    const mode = enterprise && !enterpriseDesktop ? "normal" : input.mode()
+ 
+     if (text.trim().length === 0 && images.length === 0 && input.commentCount() === 0) {
+       if (input.working()) void abort()
+diff --git a/packages/app/src/components/session/session-header.tsx b/packages/app/src/components/session/session-header.tsx
+index dc6cdaa..03cea76 100644
+--- a/packages/app/src/components/session/session-header.tsx
++++ b/packages/app/src/components/session/session-header.tsx
+@@ -1,3 +1,4 @@
++import { enterprise, enterpriseDesktop } from "@/utils/enterprise"
+ import { AppIcon } from "@opencode-ai/ui/app-icon"
+ import { Button } from "@opencode-ai/ui/button"
+ import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
+@@ -445,21 +446,23 @@ export function SessionHeader() {
+                         <StatusPopover />
+                       </Tooltip>
+                     </Show>
+-                    <TooltipKeybind
+-                      title={language.t("command.terminal.toggle")}
+-                      keybind={command.keybind("terminal.toggle")}
+-                    >
+-                      <Button
+-                        variant="ghost"
+-                        class="group/terminal-toggle titlebar-icon w-8 h-6 p-0 box-border shrink-0"
+-                        onClick={toggleTerminal}
+-                        aria-label={language.t("command.terminal.toggle")}
+-                        aria-expanded={view().terminal.opened()}
+-                        aria-controls="terminal-panel"
++                    <Show when={!enterprise || enterpriseDesktop}>
++                      <TooltipKeybind
++                        title={language.t("command.terminal.toggle")}
++                        keybind={command.keybind("terminal.toggle")}
+                       >
+-                        <Icon size="small" name={view().terminal.opened() ? "terminal-active" : "terminal"} />
+-                      </Button>
+-                    </TooltipKeybind>
++                        <Button
++                          variant="ghost"
++                          class="group/terminal-toggle titlebar-icon w-8 h-6 p-0 box-border shrink-0"
++                          onClick={toggleTerminal}
++                          aria-label={language.t("command.terminal.toggle")}
++                          aria-expanded={view().terminal.opened()}
++                          aria-controls="terminal-panel"
++                        >
++                          <Icon size="small" name={view().terminal.opened() ? "terminal-active" : "terminal"} />
++                        </Button>
++                      </TooltipKeybind>
++                    </Show>
+ 
+                     <div class="hidden md:flex items-center gap-1 shrink-0">
+                       <TooltipKeybind
+diff --git a/packages/app/src/components/settings-general.tsx b/packages/app/src/components/settings-general.tsx
+index 8adaa1f..5c58953 100644
+--- a/packages/app/src/components/settings-general.tsx
++++ b/packages/app/src/components/settings-general.tsx
+@@ -1,3 +1,4 @@
++import { enterprise } from "@/utils/enterprise"
+ import { Component, Show, createMemo, createResource, onMount, type JSX } from "solid-js"
+ import { Button } from "@opencode-ai/ui/button"
+ import { Icon } from "@opencode-ai/ui/icon"
+@@ -128,6 +129,7 @@ export const SettingsGeneral: Component = () => {
+ 
+   const [shells] = createResource(
+     async () => {
++      if (enterprise) return [] as ShellOption[]
+       const sdk = serverSdk()
+       if ((await sdk.protocol) === "v1") {
+         return (await sdk.client.pty.shells()).data ?? []
+@@ -316,36 +318,40 @@ export const SettingsGeneral: Component = () => {
+           />
+         </SettingsRow>
+ 
+-        <SettingsRow
+-          title={language.t("command.permissions.autoaccept.enable")}
+-          description={language.t("toast.permissions.autoaccept.on.description")}
+-        >
+-          <div data-action="settings-auto-accept-permissions">
+-            <Switch checked={accepting()} disabled={!dir()} onChange={toggleAccept} />
+-          </div>
+-        </SettingsRow>
++        <Show when={!enterprise}>
++          <SettingsRow
++            title={language.t("command.permissions.autoaccept.enable")}
++            description={language.t("toast.permissions.autoaccept.on.description")}
++          >
++            <div data-action="settings-auto-accept-permissions">
++              <Switch checked={accepting()} disabled={!dir()} onChange={toggleAccept} />
++            </div>
++          </SettingsRow>
++        </Show>
+ 
+-        <SettingsRow
+-          title={language.t("settings.general.row.shell.title")}
+-          description={language.t("settings.general.row.shell.description")}
+-        >
+-          <Select
+-            data-action="settings-shell"
+-            options={shellOptions()}
+-            current={shellOptions().find((o) => o.value === currentShell()) ?? autoOption}
+-            value={(o) => o.id}
+-            label={(o) => o.label}
+-            onSelect={(option) => {
+-              if (!option) return
+-              if (option.value === currentShell()) return
+-              serverSync().updateConfig({ shell: option.value })
+-            }}
+-            variant="secondary"
+-            size="small"
+-            triggerVariant="settings"
+-            triggerStyle={{ "min-width": "180px" }}
+-          />
+-        </SettingsRow>
++        <Show when={!enterprise}>
++          <SettingsRow
++            title={language.t("settings.general.row.shell.title")}
++            description={language.t("settings.general.row.shell.description")}
++          >
++            <Select
++              data-action="settings-shell"
++              options={shellOptions()}
++              current={shellOptions().find((o) => o.value === currentShell()) ?? autoOption}
++              value={(o) => o.id}
++              label={(o) => o.label}
++              onSelect={(option) => {
++                if (!option) return
++                if (option.value === currentShell()) return
++                serverSync().updateConfig({ shell: option.value })
++              }}
++              variant="secondary"
++              size="small"
++              triggerVariant="settings"
++              triggerStyle={{ "min-width": "180px" }}
++            />
++          </SettingsRow>
++        </Show>
+ 
+         <SettingsRow
+           title={language.t("settings.general.row.reasoningSummaries.title")}
+@@ -439,17 +445,19 @@ export const SettingsGeneral: Component = () => {
+           </div>
+         </SettingsRow>
+ 
+-        <SettingsRow
+-          title={language.t("settings.general.row.showCustomAgents.title")}
+-          description={language.t("settings.general.row.showCustomAgents.description")}
+-        >
+-          <div data-action="settings-show-custom-agents">
+-            <Switch
+-              checked={settings.general.showCustomAgents()}
+-              onChange={(checked) => settings.general.setShowCustomAgents(checked)}
+-            />
+-          </div>
+-        </SettingsRow>
++        <Show when={!enterprise}>
++          <SettingsRow
++            title={language.t("settings.general.row.showCustomAgents.title")}
++            description={language.t("settings.general.row.showCustomAgents.description")}
++          >
++            <div data-action="settings-show-custom-agents">
++              <Switch
++                checked={settings.general.showCustomAgents()}
++                onChange={(checked) => settings.general.setShowCustomAgents(checked)}
++              />
++            </div>
++          </SettingsRow>
++        </Show>
+       </SettingsList>
+     </div>
+   )
+diff --git a/packages/app/src/components/status-popover.tsx b/packages/app/src/components/status-popover.tsx
+index 767e7e6..d0f409f 100644
+--- a/packages/app/src/components/status-popover.tsx
++++ b/packages/app/src/components/status-popover.tsx
+@@ -1,3 +1,4 @@
++import { enterprise } from "@/utils/enterprise"
+ import { Button } from "@opencode-ai/ui/button"
+ import { Icon } from "@opencode-ai/ui/icon"
+ import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
+@@ -19,6 +20,7 @@ const Body = lazy(() => import("./status-popover-body").then((x) => ({ default:
+ const ServerBody = lazy(() => import("./status-popover-body").then((x) => ({ default: x.StatusPopoverServerBody })))
+ 
+ export function StatusPopover() {
++  if (enterprise) return null
+   const language = useLanguage()
+   const server = useServer()
+   const global = useGlobal()
+@@ -83,6 +85,7 @@ export function StatusPopover() {
+ }
+ 
+ export function StatusPopoverV2(props: { scope?: "server" }) {
++  if (enterprise) return null
+   if (props.scope === "server") return <ServerStatusPopover />
+   return <DirectoryStatusPopover />
+ }
+diff --git a/packages/app/src/constants/file-picker.ts b/packages/app/src/constants/file-picker.ts
+index 1e029b5..2318296 100644
+--- a/packages/app/src/constants/file-picker.ts
++++ b/packages/app/src/constants/file-picker.ts
+@@ -1,8 +1,8 @@
++import { enterprise } from "@/utils/enterprise"
+ export const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
+ 
+ export const ACCEPTED_FILE_TYPES = [
+-  ...ACCEPTED_IMAGE_TYPES,
+-  "application/pdf",
++  ...(enterprise ? [] : [...ACCEPTED_IMAGE_TYPES, "application/pdf"]),
+   "text/*",
+   "application/json",
+   "application/ld+json",
+diff --git a/packages/app/src/context/command.tsx b/packages/app/src/context/command.tsx
+index 054b99e..1749af6 100644
+--- a/packages/app/src/context/command.tsx
++++ b/packages/app/src/context/command.tsx
+@@ -1,3 +1,4 @@
++import { enterprise, enterpriseCommandAllowed } from "@/utils/enterprise"
+ import { createSimpleContext } from "@opencode-ai/ui/context"
+ import { useDialog } from "@opencode-ai/ui/context/dialog"
+ import { type Accessor, createEffect, createMemo, onCleanup, onMount } from "solid-js"
+@@ -292,6 +293,7 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
+ 
+       for (const reg of activeCommandRegistrations(store.registrations)) {
+         for (const opt of reg.options()) {
++          if (enterprise && !enterpriseCommandAllowed(opt.id)) continue
+           if (seen.has(opt.id)) {
+             if (import.meta.env.DEV && !warnedDuplicates.has(opt.id)) {
+               warnedDuplicates.add(opt.id)
+@@ -326,7 +328,11 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
+       )
+     })
+ 
+-    const catalogOptions = createMemo(() => Object.entries(catalog).map(([id, meta]) => ({ id, ...meta })))
++    const catalogOptions = createMemo(() =>
++      Object.entries(catalog)
++        .filter(([id]) => !enterprise || enterpriseCommandAllowed(id))
++        .map(([id, meta]) => ({ id, ...meta })),
++    )
+ 
+     const options = createMemo(() => {
+       const resolved = registered().map((opt) => ({
+diff --git a/packages/app/src/context/highlights.tsx b/packages/app/src/context/highlights.tsx
+index 058f7cc..d0b193a 100644
+--- a/packages/app/src/context/highlights.tsx
++++ b/packages/app/src/context/highlights.tsx
+@@ -1,3 +1,4 @@
++import { enterprise } from "@/utils/enterprise"
+ import { createEffect, onCleanup } from "solid-js"
+ import { createStore } from "solid-js/store"
+ import { createSimpleContext } from "@opencode-ai/ui/context"
+@@ -165,6 +166,7 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
+     }
+ 
+     const start = (previous: string) => {
++      if (enterprise) return
+       if (!settings.general.releaseNotes()) {
+         markSeen()
+         return
+diff --git a/packages/app/src/context/local.tsx b/packages/app/src/context/local.tsx
+index b99ce2d..bea2c3b 100644
+--- a/packages/app/src/context/local.tsx
++++ b/packages/app/src/context/local.tsx
+@@ -1,3 +1,4 @@
++import { enterprise } from "@/utils/enterprise"
+ import { createSimpleContext } from "@opencode-ai/ui/context"
+ import { base64Encode } from "@opencode-ai/core/util/encode"
+ import { useParams } from "@solidjs/router"
+@@ -68,7 +69,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+     const settings = useSettings()
+ 
+     const id = createMemo(() => params.id || undefined)
+-    const list = createMemo(() => sync().data.agent.filter((item) => item.mode !== "subagent" && !item.hidden))
++    const list = createMemo(() =>
++      sync().data.agent.filter(
++        (item) =>
++          item.mode !== "subagent" && !item.hidden && (!enterprise || item.name === "build" || item.name === "plan"),
++      ),
++    )
+     const agentsVisible = createMemo(() => settings.visibility.customAgents() || hasCustomAgent(list()))
+     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
+ 
+@@ -231,6 +237,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+     }
+ 
+     const current = () => {
++      if (enterprise) return models.list().find((model) => model.provider.id === "enterprise")
+       const item = firstModel(
+         () => scope()?.model,
+         () => agent.current()?.model,
+diff --git a/packages/app/src/context/models.tsx b/packages/app/src/context/models.tsx
+index a80cf2e..affd279 100644
+--- a/packages/app/src/context/models.tsx
++++ b/packages/app/src/context/models.tsx
+@@ -1,3 +1,4 @@
++import { enterprise } from "@/utils/enterprise"
+ import { type Accessor, createMemo, createResource } from "solid-js"
+ import { createStore } from "solid-js/store"
+ import { DateTime } from "luxon"
+@@ -113,6 +114,7 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
+     }
+ 
+     const visible = (model: ModelKey) => {
++      if (enterprise) return model.providerID === "enterprise"
+       const key = modelKey(model)
+       const state = visibility().get(key)
+       if (state === "hide") return false
+diff --git a/packages/app/src/context/permission.tsx b/packages/app/src/context/permission.tsx
+index d6d8019..9f0d4f1 100644
+--- a/packages/app/src/context/permission.tsx
++++ b/packages/app/src/context/permission.tsx
+@@ -1,3 +1,4 @@
++import { enterprise } from "@/utils/enterprise"
+ import { createEffect, createMemo, createRoot, getOwner, onCleanup } from "solid-js"
+ import { createStore, produce } from "solid-js/store"
+ import { createSimpleContext } from "@opencode-ai/ui/context"
+@@ -212,6 +213,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
+   )
+ 
+   function enableConfiguredDirectory(directory: string) {
++    if (enterprise) return
+     if (input.sdk.protocolKind() !== "v1") return
+     if (meta.disposed || !ready()) return
+     const [childStore] = input.sync.child(directory)
+@@ -244,6 +246,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
+   }
+ 
+   const respond: PermissionRespondFn = (request) => {
++    if (enterprise && request.response === "always") return
+     if (meta.disposed) return
+     input.sdk.api.permission
+       .reply({
+@@ -288,14 +291,17 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
+   }
+ 
+   function isAutoAccepting(sessionID: string, directory?: string) {
++    if (enterprise) return false
+     return autoRespondsPermission(store.autoAccept, sessions(directory), { sessionID }, directory)
+   }
+ 
+   function isAutoAcceptingDirectory(directory: string) {
++    if (enterprise) return false
+     return isDirectoryAutoAccepting(store.autoAccept, directory)
+   }
+ 
+   function shouldAutoRespond(permission: PermissionRequest, directory?: string) {
++    if (enterprise) return false
+     return autoRespondsPermission(store.autoAccept, sessions(directory), permission, directory)
+   }
+ 
+@@ -305,6 +311,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
+   }
+ 
+   async function shouldAutoRespondResolved(permission: PermissionRequest, directory?: string) {
++    if (enterprise) return false
+     const override = sessionAutoAccept(store.autoAccept, sessions(directory), permission, directory)
+     if (override !== undefined) return override
+     if (input.sync.session.lineage.peek(permission.sessionID)) return shouldAutoRespond(permission, directory)
+@@ -353,6 +360,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
+   })
+ 
+   function enableDirectory(directory: string) {
++    if (enterprise) return
+     if (meta.disposed) return
+     const key = directoryAcceptKey(directory)
+     setStore(
+@@ -383,6 +391,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
+   }
+ 
+   function enable(sessionID: string, directory: string) {
++    if (enterprise) return
+     if (meta.disposed) return
+     const key = acceptKey(sessionID, directory)
+     const version = bumpEnableVersion(sessionID, directory)
+diff --git a/packages/app/src/context/server.test.ts b/packages/app/src/context/server.test.ts
+index d78880e..9e0eb46 100644
+--- a/packages/app/src/context/server.test.ts
++++ b/packages/app/src/context/server.test.ts
+@@ -11,6 +11,48 @@ import {
+ import { ServerScope } from "@/utils/server-scope"
+ 
+ describe("resolveServerList", () => {
++  test("enterprise desktop preserves trusted sidecar credentials and excludes persisted servers and WSL", () => {
++    const trusted: ServerConnection.Sidecar = {
++      type: "sidecar",
++      variant: "base",
++      http: { url: "http://127.0.0.1:49231", username: "opencode", password: "ephemeral-secret" },
++    }
++    const list = resolveServerList({
++      enterpriseDesktop: true,
++      props: [
++        { type: "sidecar", variant: "wsl", distro: "Ubuntu", http: { url: "http://127.0.0.1:4000" } },
++        { type: "http", http: { url: "https://cloud.example" } },
++        trusted,
++      ],
++      stored: [
++        { url: "http://127.0.0.1:49231", username: "injected", password: "persisted-secret" },
++        "https://remote.example",
++      ],
++    })
++    expect(list).toEqual([trusted])
++    expect(ServerConnection.key(list[0])).toBe(ServerConnection.Key.make("sidecar"))
++    expect(ServerConnection.local(list[0])).toBe(true)
++  })
++
++  test("enterprise desktop never falls back to saved or remote servers while sidecar is unavailable", () => {
++    expect(
++      resolveServerList({
++        enterpriseDesktop: true,
++        props: [{ type: "http", http: { url: "http://127.0.0.1:4000" } }],
++        stored: ["https://remote.example"],
++      }),
++    ).toEqual([])
++  })
++
++  test("enterprise ignores stored remote servers and all URL credentials", () => {
++    const list = resolveServerList({
++      enterpriseOrigin: "https://code.internal",
++      stored: ["https://cloud.example", { url: "https://code.internal", username: "saved", password: "old-password" }],
++      props: [{ type: "http", authToken: true, http: { url: "https://other.example", password: "url-password" } }],
++    })
++    expect(list).toEqual([{ type: "http", http: { url: "https://code.internal" } }])
++  })
++
+   test("lets startup auth_token credentials override a persisted same-url server", () => {
+     const list = resolveServerList({
+       stored: [{ url: "https://server.example.test" }],
+diff --git a/packages/app/src/context/server.tsx b/packages/app/src/context/server.tsx
+index 450129f..d3185d1 100644
+--- a/packages/app/src/context/server.tsx
++++ b/packages/app/src/context/server.tsx
+@@ -1,3 +1,4 @@
++import { enterprise, enterpriseDesktop } from "@/utils/enterprise"
+ import { createSimpleContext } from "@opencode-ai/ui/context"
+ import { type Accessor, batch, createMemo } from "solid-js"
+ import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
+@@ -148,7 +149,16 @@ export function createServerProjects<T extends ServerProjectState>(input: {
+ export function resolveServerList(input: {
+   props?: Array<ServerConnection.Any>
+   stored: StoredServer[]
++  enterpriseOrigin?: string
++  enterpriseDesktop?: boolean
+ }): Array<ServerConnection.Any> {
++  if (input.enterpriseDesktop) {
++    // Only Electron's trusted initialization data may supply the native sidecar.
++    // Never merge a persisted password, remote URL or WSL connection into it.
++    const sidecar = input.props?.find(ServerConnection.builtin)
++    return sidecar ? [sidecar] : []
++  }
++  if (input.enterpriseOrigin) return [{ type: "http", http: { url: input.enterpriseOrigin } }]
+   const deduped = new Map<ServerConnection.Key, ServerConnection.Any>(
+     input.props?.map((v) => [ServerConnection.key(v), v]) ?? [],
+   )
+@@ -276,18 +286,29 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
+     const url = (x: StoredServer) => (typeof x === "string" ? x : "type" in x ? x.http.url : x.url)
+ 
+     const allServers = createMemo((): Array<ServerConnection.Any> => {
+-      return resolveServerList({ stored: store.list, props: props.servers })
++      return resolveServerList({
++        stored: store.list,
++        props: props.servers,
++        enterpriseOrigin: enterprise && !enterpriseDesktop ? location.origin : undefined,
++        enterpriseDesktop,
++      })
+     })
+ 
+     const [state, setState] = createStore({
+-      active: props.defaultServer,
++      active: enterpriseDesktop
++        ? ServerConnection.Key.make("sidecar")
++        : enterprise
++          ? ServerConnection.Key.make(location.origin)
++          : props.defaultServer,
+     })
+ 
+     function setActive(input: ServerConnection.Key) {
++      if (enterprise) return
+       if (state.active !== input) setState("active", input)
+     }
+ 
+     function add(input: ServerConnection.Http) {
++      if (enterprise) return
+       const url_ = normalizeServerUrl(input.http.url)
+       if (!url_) return
+       const conn: ServerConnection.Http = { ...input, authToken: undefined, http: { ...input.http, url: url_ } }
+@@ -304,6 +325,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
+     }
+ 
+     function remove(key: ServerConnection.Key) {
++      if (enterprise) return
+       const next = nextServerAfterRemoval(allServers(), key, props.defaultServer)
+       const list = store.list.filter((x) => url(x) !== key)
+       batch(() => {
+diff --git a/packages/app/src/context/settings.tsx b/packages/app/src/context/settings.tsx
+index 1a118b6..f65e874 100644
+--- a/packages/app/src/context/settings.tsx
++++ b/packages/app/src/context/settings.tsx
+@@ -1,3 +1,4 @@
++import { enterprise } from "@/utils/enterprise"
+ import { createStore, reconcile } from "solid-js/store"
+ import { batch, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+ import { createSimpleContext } from "@opencode-ai/ui/context"
+@@ -261,6 +262,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+       layoutTransitionState(!!sunset, layoutTransitionEligible(), oldInterfaceRetired(), newInterfaceNoticeDismissed()),
+     )
+     const newLayoutDesigns = createMemo(() => {
++      if (enterprise) return false
+       if (layoutUpgrade()) return true
+       if (!ready() && !oldInterfaceRetired()) return legacyNewLayoutDesignsDefault
+       if (!layoutTransitionClassified()) {
+@@ -430,6 +432,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+         },
+         newLayoutDesigns,
+         setNewLayoutDesigns(value: boolean) {
++          if (enterprise) return
+           const next = oldInterfaceRetired() ? true : value
+           if (newLayoutDesigns() === next) return
+           setStore("general", "newLayoutDesigns", next)
+@@ -442,8 +445,8 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+           setStore("general", "layoutTransitionEligible", eligible)
+         },
+         initializeAgentVisibility,
+-        layoutTransitionAvailable: createMemo(() => ready() && layoutTransition().available),
+-        newInterfaceNoticeVisible: createMemo(() => ready() && layoutTransition().notice),
++        layoutTransitionAvailable: createMemo(() => !enterprise && ready() && layoutTransition().available),
++        newInterfaceNoticeVisible: createMemo(() => !enterprise && ready() && layoutTransition().notice),
+         dismissNewInterfaceNotice() {
+           setStore("general", "newInterfaceNoticeDismissed", true)
+         },
+diff --git a/packages/app/src/context/terminal.tsx b/packages/app/src/context/terminal.tsx
+index df575b7..1332d03 100644
+--- a/packages/app/src/context/terminal.tsx
++++ b/packages/app/src/context/terminal.tsx
+@@ -1,3 +1,4 @@
++import { enterprise, enterpriseDesktop } from "@/utils/enterprise"
+ import { createStore, produce } from "solid-js/store"
+ import { createSimpleContext } from "@opencode-ai/ui/context"
+ import { batch, createEffect, createMemo, createRoot, on, onCleanup } from "solid-js"
+@@ -273,6 +274,7 @@ function createWorkspaceTerminalSession(
+   }
+ 
+   const clone = async (id: string) => {
++    if (enterprise && !enterpriseDesktop) return
+     const index = store.all.findIndex((x) => x.id === id)
+     const pty = store.all[index]
+     if (!pty) return
+@@ -313,8 +315,8 @@ function createWorkspaceTerminalSession(
+ 
+   return {
+     ready,
+-    all: createMemo(() => store.all),
+-    active: createMemo(() => store.active),
++    all: createMemo(() => (enterprise && !enterpriseDesktop ? [] : store.all)),
++    active: createMemo(() => (enterprise && !enterpriseDesktop ? undefined : store.active)),
+     clear() {
+       batch(() => {
+         setStore("active", undefined)
+@@ -322,6 +324,7 @@ function createWorkspaceTerminalSession(
+       })
+     },
+     new(options?: { focus?: boolean }) {
++      if (enterprise && !enterpriseDesktop) return
+       const nextNumber = pickNextTerminalNumber()
+       const focusRequest = options?.focus ? requestFocus(undefined, true) : undefined
+ 
+diff --git a/packages/app/src/enterprise-sentry.ts b/packages/app/src/enterprise-sentry.ts
+new file mode 100644
+index 0000000..0e76547
+--- /dev/null
++++ b/packages/app/src/enterprise-sentry.ts
+@@ -0,0 +1,4 @@
++// Aliased at build time: enterprise artifacts contain no Sentry transport or SDK.
++export const isEnabled = () => false
++export const init = (..._args: unknown[]) => undefined
++export const captureException = (..._args: unknown[]) => undefined
+diff --git a/packages/app/src/entry.tsx b/packages/app/src/entry.tsx
+index 6e5f63f..d417b23 100644
+--- a/packages/app/src/entry.tsx
++++ b/packages/app/src/entry.tsx
+@@ -1,3 +1,4 @@
++import { enterprise } from "@/utils/enterprise"
+ // @refresh reload
+ 
+ import * as Sentry from "@sentry/solid"
+@@ -70,7 +71,7 @@ const notify: Platform["notify"] = async (title, description, onClick) => {
+ 
+   const notification = new Notification(title, {
+     body: description ?? "",
+-    icon: "https://opencode.ai/favicon-96x96-v3.png",
++    icon: enterprise ? "/favicon-96x96-v3.png" : "https://opencode.ai/favicon-96x96-v3.png",
+   })
+ 
+   notification.onclick = () => {
+@@ -81,6 +82,7 @@ const notify: Platform["notify"] = async (title, description, onClick) => {
+ }
+ 
+ const openExternal: Platform["openExternal"] = (value) => {
++  if (enterprise) return
+   if (!URL.canParse(value)) return
+   const url = new URL(value)
+   if (url.protocol !== "http:" && url.protocol !== "https:" && url.protocol !== "mailto:") return
+@@ -97,6 +99,7 @@ if (!(root instanceof HTMLElement) && import.meta.env.DEV) {
+ }
+ 
+ const getCurrentUrl = () => {
++  if (enterprise) return location.origin
+   if (location.hostname.includes("opencode.ai")) return "http://localhost:4096"
+   if (import.meta.env.DEV)
+     return `http://${import.meta.env.VITE_OPENCODE_SERVER_HOST ?? "localhost"}:${import.meta.env.VITE_OPENCODE_SERVER_PORT ?? "4096"}`
+@@ -104,6 +107,7 @@ const getCurrentUrl = () => {
+ }
+ 
+ const getDefaultUrl = () => {
++  if (enterprise) return location.origin
+   const lsDefault = readDefaultServerUrl()
+   if (lsDefault) return lsDefault
+   return getCurrentUrl()
+@@ -124,13 +128,14 @@ const platform: Platform = {
+   restart,
+   notify,
+   getDefaultServer: async () => {
++    if (enterprise) return ServerConnection.Key.make(location.origin)
+     const stored = readDefaultServerUrl()
+     return stored ? ServerConnection.Key.make(stored) : null
+   },
+-  setDefaultServer: writeDefaultServerUrl,
++  setDefaultServer: enterprise ? () => undefined : writeDefaultServerUrl,
+ }
+ 
+-if (import.meta.env.VITE_SENTRY_DSN) {
++if (!enterprise && import.meta.env.VITE_SENTRY_DSN) {
+   Sentry.init({
+     dsn: import.meta.env.VITE_SENTRY_DSN,
+     environment: import.meta.env.VITE_SENTRY_ENVIRONMENT ?? import.meta.env.MODE,
+@@ -151,7 +156,7 @@ if (import.meta.env.VITE_SENTRY_DSN) {
+ 
+ if (root instanceof HTMLElement) {
+   void loadInitialLocale().then((locale) => {
+-    const auth = authFromToken(new URLSearchParams(location.search).get("auth_token"))
++    const auth = enterprise ? undefined : authFromToken(new URLSearchParams(location.search).get("auth_token"))
+     clearAuthToken()
+     const server: ServerConnection.Http = {
+       type: "http",
+diff --git a/packages/app/src/env.d.ts b/packages/app/src/env.d.ts
+index 5754df7..c8b0008 100644
+--- a/packages/app/src/env.d.ts
++++ b/packages/app/src/env.d.ts
+@@ -1,4 +1,6 @@
+ interface ImportMetaEnv {
++  readonly VITE_OPENCODE_ENTERPRISE?: string
++  readonly VITE_OPENCODE_ENTERPRISE_DESKTOP?: string
+   readonly VITE_OPENCODE_SERVER_HOST: string
+   readonly VITE_OPENCODE_SERVER_PORT: string
+   readonly VITE_OPENCODE_CHANNEL?: "dev" | "beta" | "prod"
+diff --git a/packages/app/src/i18n/en.ts b/packages/app/src/i18n/en.ts
+index 62d4dc1..acf1e0c 100644
+--- a/packages/app/src/i18n/en.ts
++++ b/packages/app/src/i18n/en.ts
+@@ -308,6 +308,7 @@ export const dict = {
+   "prompt.action.send": "Send",
+   "prompt.action.stop": "Stop",
+ 
++  "enterprise.attachment.unsupported": "Attach text files. Images and PDFs are disabled by enterprise policy.",
+   "prompt.toast.pasteUnsupported.title": "Unsupported attachment",
+   "prompt.toast.pasteUnsupported.description": "Only images, PDFs, or text files can be attached here.",
+   "prompt.toast.attachmentDuplicate.title": "This file has already been uploaded",
+diff --git a/packages/app/src/index.ts b/packages/app/src/index.ts
+index 0e0ed02..cf0dc84 100644
+--- a/packages/app/src/index.ts
++++ b/packages/app/src/index.ts
+@@ -28,3 +28,4 @@ export {
+ } from "./wsl/types"
+ export { ServerConnection } from "./context/server"
+ export { createDraftStore, type DraftStore } from "./utils/draft-store"
++export { enterprise, enterpriseDesktop } from "./utils/enterprise"
+diff --git a/packages/app/src/pages/error.tsx b/packages/app/src/pages/error.tsx
+index 2fc6095..73c7ab8 100644
+--- a/packages/app/src/pages/error.tsx
++++ b/packages/app/src/pages/error.tsx
+@@ -1,3 +1,4 @@
++import { enterprise } from "@/utils/enterprise"
+ import { TextField } from "@opencode-ai/ui/text-field"
+ import * as Sentry from "@sentry/solid"
+ import { Logo } from "@opencode-ai/ui/logo"
+@@ -304,7 +305,7 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
+               {language.t("error.page.action.exportLogs")}
+             </Button>
+           </Show>
+-          <Show when={Sentry.isEnabled}>
++          <Show when={!enterprise && Sentry.isEnabled()}>
+             {(_) => {
+               const [reported, setReported] = createSignal(false)
+               return (
+@@ -349,17 +350,19 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
+           {(message) => <p class="text-xs text-text-danger-base text-center max-w-2xl">{message()}</p>}
+         </Show>
+         <div class="flex flex-col items-center gap-2">
+-          <div class="flex items-center justify-center gap-1">
+-            {language.t("error.page.report.prefix")}
+-            <button
+-              type="button"
+-              class="flex items-center text-text-interactive-base gap-1"
+-              onClick={() => platform.openExternal("https://opencode.ai/desktop-feedback")}
+-            >
+-              <div>{language.t("error.page.report.discord")}</div>
+-              <Icon name="discord" class="text-text-interactive-base" />
+-            </button>
+-          </div>
++          <Show when={!enterprise}>
++            <div class="flex items-center justify-center gap-1">
++              {language.t("error.page.report.prefix")}
++              <button
++                type="button"
++                class="flex items-center text-text-interactive-base gap-1"
++                onClick={() => platform.openExternal("https://opencode.ai/desktop-feedback")}
++              >
++                <div>{language.t("error.page.report.discord")}</div>
++                <Icon name="discord" class="text-text-interactive-base" />
++              </button>
++            </div>
++          </Show>
+           <Show when={platform.version}>
+             {(version) => (
+               <p class="text-xs text-text-weak">{language.t("error.page.version", { version: version() })}</p>
+diff --git a/packages/app/src/pages/home/legacy-home.tsx b/packages/app/src/pages/home/legacy-home.tsx
+index 0556f7c..4fde654 100644
+--- a/packages/app/src/pages/home/legacy-home.tsx
++++ b/packages/app/src/pages/home/legacy-home.tsx
+@@ -1,3 +1,4 @@
++import { enterprise } from "@/utils/enterprise"
+ import { DialogSelectServer } from "@/components/dialog-select-server"
+ import { useDirectoryPicker } from "@/components/directory-picker"
+ import { useGlobal } from "@/context/global"
+@@ -72,7 +73,8 @@ export function LegacyHome() {
+         size="large"
+         variant="ghost"
+         class="mt-4 mx-auto text-14-regular text-text-weak"
+-        onClick={() => dialog.show(() => <DialogSelectServer />)}
++        disabled={enterprise}
++        onClick={() => !enterprise && dialog.show(() => <DialogSelectServer />)}
+       >
+         <div
+           classList={{
+diff --git a/packages/app/src/pages/layout.tsx b/packages/app/src/pages/layout.tsx
+index 98548ab..11d1796 100644
+--- a/packages/app/src/pages/layout.tsx
++++ b/packages/app/src/pages/layout.tsx
+@@ -1,3 +1,4 @@
++import { enterprise } from "@/utils/enterprise"
+ import {
+   createEffect,
+   createMemo,
+@@ -578,6 +579,7 @@ export default function LegacyLayout(props: ParentProps) {
+     workspaceName(directory, projectId, branch) ?? branch ?? getFilename(directory)
+ 
+   const workspaceSetting = createMemo(() => {
++    if (enterprise) return false
+     const project = currentProject()
+     if (!project) return false
+     if (project.vcs !== "git") return false
+@@ -1084,6 +1086,7 @@ export default function LegacyLayout(props: ParentProps) {
+   })
+ 
+   function connectProvider() {
++    if (enterprise) return
+     const run = ++dialogRun
+     void import("@/components/dialog-connect-provider").then((x) => {
+       if (dialogDead || dialogRun !== run) return
+@@ -1092,6 +1095,7 @@ export default function LegacyLayout(props: ParentProps) {
+   }
+ 
+   function openServer() {
++    if (enterprise) return
+     const run = ++dialogRun
+     void import("@/components/dialog-select-server").then((x) => {
+       if (dialogDead || dialogRun !== run) return
+@@ -1337,6 +1341,7 @@ export default function LegacyLayout(props: ParentProps) {
+   }
+ 
+   function toggleProjectWorkspaces(project: LocalProject) {
++    if (enterprise) return
+     const enabled = layout.sidebar.workspaces(project.worktree)()
+     if (enabled) {
+       layout.sidebar.toggleWorkspaces(project.worktree)
+@@ -1820,6 +1825,7 @@ export default function LegacyLayout(props: ParentProps) {
+   }
+ 
+   const createWorkspace = async (project: LocalProject) => {
++    if (enterprise) return
+     clearSidebarHoverState()
+     const created = await serverSDK()
+       .client.worktree.create({ directory: project.worktree })
+@@ -1904,7 +1910,8 @@ export default function LegacyLayout(props: ParentProps) {
+     closeProject,
+     showEditProjectDialog: (proj) => showEditProjectDialog(server.current!, proj),
+     toggleProjectWorkspaces,
+-    workspacesEnabled: (project) => project.vcs === "git" && layout.sidebar.workspaces(project.worktree)(),
++    workspacesEnabled: (project) =>
++      !enterprise && project.vcs === "git" && layout.sidebar.workspaces(project.worktree)(),
+     workspaceIds,
+     workspaceLabel,
+     sessionProps: {
+@@ -1950,12 +1957,14 @@ export default function LegacyLayout(props: ParentProps) {
+         .filter((directory) => notification.project.unseenCount(directory) > 0)
+         .forEach((directory) => notification.project.markViewed(directory))
+     const workspacesEnabled = createMemo(() => {
++      if (enterprise) return false
+       const item = project()
+       if (!item) return false
+       if (item.vcs !== "git") return false
+       return layout.sidebar.workspaces(item.worktree)()
+     })
+     const canToggle = createMemo(() => {
++      if (enterprise) return false
+       const item = project()
+       if (!item) return false
+       return item.vcs === "git" || layout.sidebar.workspaces(item.worktree)()
+@@ -2187,7 +2196,10 @@ export default function LegacyLayout(props: ParentProps) {
+         <div
+           class="shrink-0 px-3 py-3"
+           classList={{
+-            hidden: store.gettingStartedDismissed || !(providers.all().size > 0 && providers.paid().length === 0),
++            hidden:
++              enterprise ||
++              store.gettingStartedDismissed ||
++              !(providers.all().size > 0 && providers.paid().length === 0),
+           }}
+         >
+           <div class="rounded-xl bg-background-base shadow-xs-border-base" data-component="getting-started">
+diff --git a/packages/app/src/pages/layout/helpers.ts b/packages/app/src/pages/layout/helpers.ts
+index 5245ba6..7e15114 100644
+--- a/packages/app/src/pages/layout/helpers.ts
++++ b/packages/app/src/pages/layout/helpers.ts
+@@ -1,3 +1,4 @@
++import { enterprise, enterpriseAsset } from "@/utils/enterprise"
+ import { getFilename } from "@opencode-ai/core/util/path"
+ import { type Session } from "@opencode-ai/sdk/v2/client"
+ import { pathKey } from "@/utils/path-key"
+@@ -87,6 +88,7 @@ export function homeSessionServerStatus(active: boolean, status: () => { working
+ const OPENCODE_PROJECT_ID = "4b0ea68d7af9a6031a7ffda7ad66e0cb83315750"
+ 
+ export function getProjectAvatarSource(id?: string, icon?: { color?: string; url?: string; override?: string }) {
++  if (enterprise) return enterpriseAsset(icon?.override ?? icon?.url, location.origin)
+   if (id === OPENCODE_PROJECT_ID) return "https://opencode.ai/favicon.svg"
+   if (icon?.override) return icon.override
+   if (icon?.color) return undefined
+diff --git a/packages/app/src/pages/layout/sidebar-shell.tsx b/packages/app/src/pages/layout/sidebar-shell.tsx
+index ca36af2..27ebe3e 100644
+--- a/packages/app/src/pages/layout/sidebar-shell.tsx
++++ b/packages/app/src/pages/layout/sidebar-shell.tsx
+@@ -1,3 +1,4 @@
++import { enterprise } from "@/utils/enterprise"
+ import { createEffect, createMemo, For, Show, type Accessor, type JSX } from "solid-js"
+ import {
+   DragDropProvider,
+@@ -99,15 +100,17 @@ export const SidebarContent = (props: {
+               aria-label={props.settingsLabel()}
+             />
+           </TooltipKeybind>
+-          <Tooltip placement={placement()} value={props.helpLabel()}>
+-            <IconButton
+-              icon="help"
+-              variant="ghost"
+-              size="large"
+-              onClick={props.onOpenHelp}
+-              aria-label={props.helpLabel()}
+-            />
+-          </Tooltip>
++          <Show when={!enterprise}>
++            <Tooltip placement={placement()} value={props.helpLabel()}>
++              <IconButton
++                icon="help"
++                variant="ghost"
++                size="large"
++                onClick={props.onOpenHelp}
++                aria-label={props.helpLabel()}
++              />
++            </Tooltip>
++          </Show>
+         </div>
+       </div>
+ 
+diff --git a/packages/app/src/pages/session/composer/session-composer-state.ts b/packages/app/src/pages/session/composer/session-composer-state.ts
+index f54e0c9..3e405e8 100644
+--- a/packages/app/src/pages/session/composer/session-composer-state.ts
++++ b/packages/app/src/pages/session/composer/session-composer-state.ts
+@@ -1,3 +1,4 @@
++import { enterprise } from "@/utils/enterprise"
+ import { createEffect, createMemo, on, onCleanup } from "solid-js"
+ import { createStore } from "solid-js/store"
+ import type { PermissionRequest, QuestionRequest, Todo } from "@opencode-ai/sdk/v2"
+@@ -76,6 +77,7 @@ export function createSessionComposerController(options?: { closeMs?: number | (
+   })
+ 
+   const decide = (response: "once" | "always" | "reject") => {
++    if (enterprise && response === "always") return
+     const perm = permissionRequest()
+     if (!perm) return
+     if (store.responding === perm.id) return
+diff --git a/packages/app/src/pages/session/composer/session-permission-dock.tsx b/packages/app/src/pages/session/composer/session-permission-dock.tsx
+index 35a62f7..9655b02 100644
+--- a/packages/app/src/pages/session/composer/session-permission-dock.tsx
++++ b/packages/app/src/pages/session/composer/session-permission-dock.tsx
+@@ -1,3 +1,4 @@
++import { enterprise } from "@/utils/enterprise"
+ import { For, Show } from "solid-js"
+ import type { PermissionRequest } from "@opencode-ai/sdk/v2"
+ import { Button } from "@opencode-ai/ui/button"
+@@ -37,14 +38,16 @@ export function SessionPermissionDock(props: {
+             <Button variant="ghost" size="normal" onClick={() => props.onDecide("reject")} disabled={props.responding}>
+               {language.t("ui.permission.deny")}
+             </Button>
+-            <Button
+-              variant="secondary"
+-              size="normal"
+-              onClick={() => props.onDecide("always")}
+-              disabled={props.responding}
+-            >
+-              {language.t("ui.permission.allowAlways")}
+-            </Button>
++            <Show when={!enterprise}>
++              <Button
++                variant="secondary"
++                size="normal"
++                onClick={() => props.onDecide("always")}
++                disabled={props.responding}
++              >
++                {language.t("ui.permission.allowAlways")}
++              </Button>
++            </Show>
+             <Button variant="primary" size="normal" onClick={() => props.onDecide("once")} disabled={props.responding}>
+               {language.t("ui.permission.allowOnce")}
+             </Button>
+diff --git a/packages/app/src/utils/enterprise.test.ts b/packages/app/src/utils/enterprise.test.ts
+new file mode 100644
+index 0000000..f17d054
+--- /dev/null
++++ b/packages/app/src/utils/enterprise.test.ts
+@@ -0,0 +1,55 @@
++import { describe, expect, test } from "bun:test"
++import { enterpriseAsset, enterpriseCommandAllowed } from "./enterprise"
++
++describe("enterprise browser policy", () => {
++  test("native desktop retains local terminal commands without opening cloud or disabled worktree controls", () => {
++    for (const id of ["terminal.toggle", "terminal.new", "prompt.mode.shell"]) {
++      expect(enterpriseCommandAllowed(id, true)).toBe(true)
++    }
++    for (const id of [
++      "provider.connect",
++      "server.switch",
++      "model.choose",
++      "permissions.autoaccept",
++      "session.share",
++      "workspace.new",
++      "workspace.toggle",
++    ]) {
++      expect(enterpriseCommandAllowed(id, true)).toBe(false)
++    }
++  })
++  test("blocks cloud configuration, direct shell, auto-approval and sharing commands", () => {
++    for (const id of [
++      "provider.connect",
++      "server.switch",
++      "model.choose",
++      "terminal.toggle",
++      "workspace.new",
++      "session.share",
++      "session.unshare",
++      "permissions.autoaccept",
++      "prompt.mode.shell",
++      "suggested.provider.connect",
++    ]) {
++      expect(enterpriseCommandAllowed(id)).toBe(false)
++    }
++    for (const id of ["session.new", "session.previous", "file.open", "settings.open", "review.toggle"]) {
++      expect(enterpriseCommandAllowed(id)).toBe(true)
++    }
++  })
++
++  test("accepts local assets but rejects remote URLs, URL credentials and active data", () => {
++    const origin = "https://code.internal"
++    expect(enterpriseAsset("/favicon-v3.svg", origin)).toBe(`${origin}/favicon-v3.svg`)
++    expect(enterpriseAsset("data:image/png;base64,YQ==", origin)).toBe("data:image/png;base64,YQ==")
++    for (const value of [
++      "https://opencode.ai/favicon.svg",
++      "//external.test/pixel",
++      "https://user:password@code.internal/a",
++      "data:image/svg+xml,<svg/>",
++      "javascript:alert(1)",
++    ]) {
++      expect(enterpriseAsset(value, origin)).toBeUndefined()
++    }
++  })
++})
+diff --git a/packages/app/src/utils/enterprise.ts b/packages/app/src/utils/enterprise.ts
+new file mode 100644
+index 0000000..4b57a87
+--- /dev/null
++++ b/packages/app/src/utils/enterprise.ts
+@@ -0,0 +1,26 @@
++// A build-time presentation policy. The server independently enforces every restriction.
++export const enterprise = import.meta.env.VITE_OPENCODE_ENTERPRISE === "true"
++export const enterpriseDesktop = enterprise && import.meta.env.VITE_OPENCODE_ENTERPRISE_DESKTOP === "true"
++
++export function enterpriseCommandAllowed(id: string, desktop = enterpriseDesktop) {
++  const action = id.replace(/^suggested\./, "")
++  if (desktop && ["terminal.", "prompt.mode.shell"].some((prefix) => action.startsWith(prefix))) return true
++  return ![
++    "provider.",
++    "server.",
++    "model.",
++    "terminal.",
++    "workspace.",
++    "session.share",
++    "session.unshare",
++    "permissions.autoaccept",
++    "prompt.mode.shell",
++  ].some((prefix) => action.startsWith(prefix))
++}
++
++export function enterpriseAsset(source: string | undefined, origin: string) {
++  if (!source) return
++  if (/^data:image\/(?:png|jpeg|gif|webp);base64,/.test(source)) return source
++  const url = URL.canParse(source, origin) ? new URL(source, origin) : undefined
++  if (url?.origin === origin && !url.username && !url.password) return url.href
++}
+diff --git a/packages/app/src/utils/server-protocol.ts b/packages/app/src/utils/server-protocol.ts
+index 27b8dc2..a13d5eb 100644
+--- a/packages/app/src/utils/server-protocol.ts
++++ b/packages/app/src/utils/server-protocol.ts
+@@ -1,3 +1,4 @@
++import { enterprise } from "@/utils/enterprise"
+ import type { ServerConnection } from "@/context/server"
+ import { authTokenFromCredentials } from "./server"
+ 
+@@ -25,6 +26,7 @@ export async function detectServerProtocol(
+   server: ServerConnection.HttpBase,
+   fetch: typeof globalThis.fetch,
+ ): Promise<ServerProtocol> {
++  if (enterprise) return "v1"
+   const legacy = await probe(server, fetch, "/global/health").catch(() => undefined)
+   if (legacy && "healthy" in legacy && legacy.healthy === true) return "v1"
+ 
+diff --git a/packages/app/src/utils/terminal-websocket-url.test.ts b/packages/app/src/utils/terminal-websocket-url.test.ts
+index aac854c..a76587d 100644
+--- a/packages/app/src/utils/terminal-websocket-url.test.ts
++++ b/packages/app/src/utils/terminal-websocket-url.test.ts
+@@ -2,6 +2,24 @@ import { describe, expect, test } from "bun:test"
+ import { terminalWebSocketURL } from "./terminal-websocket-url"
+ 
+ describe("terminalWebSocketURL", () => {
++  test("native enterprise never places sidecar credentials into the WebSocket URL", () => {
++    const url = terminalWebSocketURL({
++      protocol: "v1",
++      url: "http://127.0.0.1:49365",
++      id: "pty_test",
++      directory: "C:\\work\\project",
++      cursor: 0,
++      username: "opencode",
++      password: "ephemeral-secret",
++      sameOrigin: false,
++      authToken: true,
++      nativeEnterprise: true,
++    })
++    expect(url.searchParams.has("auth_token")).toBe(false)
++    expect(url.username).toBe("")
++    expect(url.password).toBe("")
++    expect(url.searchParams.get("directory")).toBe("C:\\work\\project")
++  })
+   test("uses the current ticketed PTY route", () => {
+     const url = terminalWebSocketURL({
+       url: "http://127.0.0.1:49365",
+diff --git a/packages/app/src/utils/terminal-websocket-url.ts b/packages/app/src/utils/terminal-websocket-url.ts
+index a32b239..c9327d2 100644
+--- a/packages/app/src/utils/terminal-websocket-url.ts
++++ b/packages/app/src/utils/terminal-websocket-url.ts
+@@ -1,4 +1,5 @@
+ import { authTokenFromCredentials } from "@/utils/server"
++import { enterpriseDesktop } from "@/utils/enterprise"
+ 
+ export function terminalWebSocketURL(input: {
+   protocol?: "v1" | "v2"
+@@ -11,6 +12,7 @@ export function terminalWebSocketURL(input: {
+   username?: string
+   password?: string
+   authToken?: boolean
++  nativeEnterprise?: boolean
+ }) {
+   const isV1 = input.protocol === "v1"
+   const next = new URL(`${input.url}${isV1 ? `/pty/${input.id}/connect` : `/api/pty/${input.id}/connect`}`)
+@@ -25,7 +27,13 @@ export function terminalWebSocketURL(input: {
+     next.searchParams.set("ticket", input.ticket)
+     return next
+   }
+-  if (isV1 && input.password && (!input.sameOrigin || input.authToken)) {
++  // Electron attaches credentials in the main process. Never put its password in a URL.
++  if (
++    !(enterpriseDesktop || input.nativeEnterprise) &&
++    isV1 &&
++    input.password &&
++    (!input.sameOrigin || input.authToken)
++  ) {
+     next.searchParams.set(
+       "auth_token",
+       authTokenFromCredentials({ username: input.username, password: input.password }),
+diff --git a/packages/app/vite.config.ts b/packages/app/vite.config.ts
+index 8df324d..f597953 100644
+--- a/packages/app/vite.config.ts
++++ b/packages/app/vite.config.ts
+@@ -1,9 +1,12 @@
+ import { sentryVitePlugin } from "@sentry/vite-plugin"
++import { fileURLToPath } from "node:url"
+ import { defineConfig } from "vite"
+ import desktopPlugin from "./vite"
+ 
++const enterprise = process.env.VITE_OPENCODE_ENTERPRISE === "true"
++
+ const sentry =
+-  process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT
++  !enterprise && process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT
+     ? sentryVitePlugin({
+         authToken: process.env.SENTRY_AUTH_TOKEN,
+         org: process.env.SENTRY_ORG,
+@@ -21,6 +24,9 @@ const sentry =
+ 
+ export default defineConfig({
+   plugins: [desktopPlugin, sentry] as any,
++  resolve: {
++    alias: enterprise ? { "@sentry/solid": fileURLToPath(new URL("./src/enterprise-sentry.ts", import.meta.url)) } : {},
++  },
+   server: {
+     host: "0.0.0.0",
+     allowedHosts: true,
+@@ -28,6 +34,6 @@ export default defineConfig({
+   },
+   build: {
+     target: "esnext",
+-    sourcemap: true,
++    sourcemap: !enterprise,
+   },
+ })
+diff --git a/packages/app/vite.js b/packages/app/vite.js
+index e1f8516..6221495 100644
+--- a/packages/app/vite.js
++++ b/packages/app/vite.js
+@@ -37,6 +37,7 @@ export default [
+   {
+     name: "opencode-desktop:theme-preload",
+     transformIndexHtml(html) {
++      if (process.env.VITE_OPENCODE_ENTERPRISE === "true") return html
+       return html.replace(
+         '<script id="oc-theme-preload-script" src="/oc-theme-preload.js"></script>',
+         `<script id="oc-theme-preload-script">${readFileSync(theme, "utf8")}</script>`,
+diff --git a/packages/desktop/electron-builder.config.ts b/packages/desktop/electron-builder.config.ts
+index 508c0df..5d06a81 100644
+--- a/packages/desktop/electron-builder.config.ts
++++ b/packages/desktop/electron-builder.config.ts
+@@ -19,6 +19,7 @@ const metainfoFpm = (appId: string) =>
+   `${path.join(packageDir, "resources", `${appId}.metainfo.xml`)}=/usr/share/metainfo/${appId}.metainfo.xml`
+ 
+ async function signWindows(configuration: { path: string }) {
++  if (channel === "enterprise") return // Public candidates are unsigned; private delivery signs separately.
+   if (process.platform !== "win32") return
+   if (process.env.GITHUB_ACTIONS !== "true") return
+ 
+@@ -31,7 +32,7 @@ async function signWindows(configuration: { path: string }) {
+ 
+ const channel = (() => {
+   const raw = process.env.OPENCODE_CHANNEL
+-  if (raw === "dev" || raw === "beta" || raw === "prod") return raw
++  if (raw === "dev" || raw === "beta" || raw === "prod" || raw === "enterprise") return raw
+   return "dev"
+ })()
+ 
+@@ -39,6 +40,7 @@ const APP_IDS = {
+   dev: "ai.opencode.desktop.dev",
+   beta: "ai.opencode.desktop.beta",
+   prod: "ai.opencode.desktop",
++  enterprise: "io.github.keugenek.opencode.enterprise",
+ } as const
+ 
+ const getBase = (appId: string): Configuration => ({
+@@ -119,6 +121,34 @@ const getBase = (appId: string): Configuration => ({
+ })
+ 
+ function getConfig() {
++  if (channel === "enterprise") {
++    const base = getBase(APP_IDS.enterprise)
++    return {
++      ...base,
++      appId: APP_IDS.enterprise,
++      productName: "OpenCode Enterprise Desktop",
++      extraMetadata: {
++        ...base.extraMetadata,
++        name: "opencode-enterprise-desktop",
++        description: "Independent OpenCode distribution for a managed internal model",
++        homepage: "https://github.com/keugenek/opencode-enterprise",
++        author: { name: "Eugene Kniazev and contributors" },
++      },
++      artifactName: "opencode-enterprise-desktop-${version}-${os}-${arch}.${ext}",
++      publish: null,
++      forceCodeSigning: false,
++      protocols: [],
++      // The enterprise V1 server is bundled JS; never include an upstream CLI.
++      extraResources: [],
++      nsis: {
++        ...base.nsis,
++        oneClick: false,
++        perMachine: true,
++        allowToChangeInstallationDirectory: false,
++        deleteAppDataOnUninstall: false,
++      },
++    } satisfies Configuration
++  }
+   const appId = APP_IDS[channel]
+   const base = getBase(appId)
+ 
+diff --git a/packages/desktop/electron.vite.config.ts b/packages/desktop/electron.vite.config.ts
+index 5d25be2..ff6e024 100644
+--- a/packages/desktop/electron.vite.config.ts
++++ b/packages/desktop/electron.vite.config.ts
+@@ -1,21 +1,28 @@
+ import { sentryVitePlugin } from "@sentry/vite-plugin"
+ import { defineConfig } from "electron-vite"
+ import appPlugin from "@opencode-ai/app/vite"
+-import * as fs from "node:fs/promises"
++import { mkdir, readdir, readFile, writeFile } from "node:fs/promises"
++import { fileURLToPath } from "node:url"
+ 
+ const OPENCODE_SERVER_DIST = "../opencode/dist/node"
+ 
+ const channel = (() => {
+   const raw = process.env.OPENCODE_CHANNEL
+-  if (raw === "dev" || raw === "beta" || raw === "prod") return raw
++  if (raw === "dev" || raw === "beta" || raw === "prod" || raw === "enterprise") return raw
+   if (process.env.OPENCODE_CHANNEL === "latest") return "prod"
+   return "dev"
+ })()
+ 
++const enterprise = channel === "enterprise"
++if (enterprise) {
++  process.env.VITE_OPENCODE_ENTERPRISE = "true"
++  process.env.VITE_OPENCODE_ENTERPRISE_DESKTOP = "true"
++}
++
+ const nodePtyPkg = `@lydell/node-pty-${process.platform}-${process.arch}`
+ 
+ const sentry =
+-  process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT
++  !enterprise && process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT
+     ? sentryVitePlugin({
+         authToken: process.env.SENTRY_AUTH_TOKEN,
+         org: process.env.SENTRY_ORG,
+@@ -35,6 +42,7 @@ export default defineConfig({
+   main: {
+     define: {
+       "import.meta.env.OPENCODE_CHANNEL": JSON.stringify(channel),
++      "import.meta.env.OPENCODE_ENTERPRISE": JSON.stringify(enterprise),
+     },
+     build: {
+       rollupOptions: {
+@@ -71,15 +79,19 @@ const require = __cjs_mod__.createRequire(import.meta.url);
+       {
+         name: "opencode:copy-server-assets",
+         async writeBundle() {
+-          for (const l of await fs.readdir(OPENCODE_SERVER_DIST)) {
++          await mkdir("./out/main/chunks", { recursive: true })
++          for (const l of await readdir(OPENCODE_SERVER_DIST)) {
+             if (!l.endsWith(".wasm")) continue
+-            await fs.writeFile(`./out/main/chunks/${l}`, await fs.readFile(`${OPENCODE_SERVER_DIST}/${l}`))
++            await writeFile(`./out/main/chunks/${l}`, await readFile(`${OPENCODE_SERVER_DIST}/${l}`))
+           }
+         },
+       },
+     ],
+   },
+   preload: {
++    define: {
++      "import.meta.env.OPENCODE_ENTERPRISE": JSON.stringify(enterprise),
++    },
+     build: {
+       rollupOptions: {
+         input: { index: "src/preload/index.ts" },
+@@ -91,11 +103,21 @@ const require = __cjs_mod__.createRequire(import.meta.url);
+     },
+   },
+   renderer: {
++    define: {
++      "import.meta.env.VITE_OPENCODE_ENTERPRISE": JSON.stringify(enterprise ? "true" : "false"),
++      "import.meta.env.VITE_OPENCODE_ENTERPRISE_DESKTOP": JSON.stringify(enterprise ? "true" : "false"),
++      ...(enterprise ? { "import.meta.env.VITE_SENTRY_DSN": JSON.stringify("") } : {}),
++    },
++    resolve: enterprise
++      ? {
++          alias: { "@sentry/solid": fileURLToPath(new URL("../app/src/enterprise-sentry.ts", import.meta.url)) },
++        }
++      : undefined,
+     plugins: [appPlugin, sentry],
+     publicDir: "../../../app/public",
+     root: "src/renderer",
+     build: {
+-      sourcemap: true,
++      sourcemap: !enterprise,
+       rollupOptions: {
+         input: {
+           main: "src/renderer/index.html",
+diff --git a/packages/desktop/scripts/copy-icons.ts b/packages/desktop/scripts/copy-icons.ts
+index 400f427..67724a9 100644
+--- a/packages/desktop/scripts/copy-icons.ts
++++ b/packages/desktop/scripts/copy-icons.ts
+@@ -2,9 +2,9 @@ import { $ } from "bun"
+ import { resolveChannel } from "./utils"
+ 
+ const arg = process.argv[2]
+-const channel = arg === "dev" || arg === "beta" || arg === "prod" ? arg : resolveChannel()
++const channel = arg === "dev" || arg === "beta" || arg === "prod" || arg === "enterprise" ? arg : resolveChannel()
+ 
+-const src = `./icons/${channel}`
++const src = `./icons/${channel === "enterprise" ? "prod" : channel}`
+ const dest = "resources/icons"
+ 
+ await $`rm -rf ${dest}`
+diff --git a/packages/desktop/scripts/copy-metainfo.ts b/packages/desktop/scripts/copy-metainfo.ts
+index e7585cc..25e1caf 100644
+--- a/packages/desktop/scripts/copy-metainfo.ts
++++ b/packages/desktop/scripts/copy-metainfo.ts
+@@ -1,11 +1,24 @@
+ import { resolveChannel } from "./utils"
+ 
+ const arg = process.argv[2]
+-const channel = arg === "dev" || arg === "beta" || arg === "prod" ? arg : resolveChannel()
++const channel = arg === "dev" || arg === "beta" || arg === "prod" || arg === "enterprise" ? arg : resolveChannel()
+ 
+-const appId = channel === "prod" ? "ai.opencode.desktop" : `ai.opencode.desktop.${channel}`
+-const productName = channel === "prod" ? "OpenCode" : `OpenCode ${channel.charAt(0).toUpperCase() + channel.slice(1)}`
+-const summary = `Open source AI coding agent${channel !== "prod" ? ` (${channel})` : ""}`
++const appId =
++  channel === "enterprise"
++    ? "io.github.keugenek.opencode.enterprise"
++    : channel === "prod"
++      ? "ai.opencode.desktop"
++      : `ai.opencode.desktop.${channel}`
++const productName =
++  channel === "enterprise"
++    ? "OpenCode Enterprise Desktop"
++    : channel === "prod"
++      ? "OpenCode"
++      : `OpenCode ${channel.charAt(0).toUpperCase() + channel.slice(1)}`
++const summary =
++  channel === "enterprise"
++    ? "Independent coding agent for one managed internal model"
++    : `Open source AI coding agent${channel !== "prod" ? ` (${channel})` : ""}`
+ 
+ const xml = `<?xml version="1.0" encoding="UTF-8"?>
+ <component type="desktop-application">
+@@ -17,13 +30,13 @@ const xml = `<?xml version="1.0" encoding="UTF-8"?>
+   <name>${productName}</name>
+   <summary>${summary}</summary>
+ 
+-  <developer id="ly.anoma">
+-    <name>Anomaly Innovations Inc.</name>
++  <developer id="${channel === "enterprise" ? "io.github.keugenek" : "ly.anoma"}">
++    <name>${channel === "enterprise" ? "Eugene Kniazev" : "Anomaly Innovations Inc."}</name>
+   </developer>
+ 
+   <description>
+     <p>
+-      OpenCode is an open source agent that helps you write and run code with any AI model.
++      ${channel === "enterprise" ? "Independent OpenCode distribution for an administrator-managed internal model. Not affiliated with Anomaly." : "OpenCode is an open source agent that helps you write and run code with any AI model."}
+     </p>
+   </description>
+ 
+@@ -31,15 +44,19 @@ const xml = `<?xml version="1.0" encoding="UTF-8"?>
+ 
+   <content_rating type="oars-1.1" />
+ 
+-  <url type="bugtracker">https://github.com/anomalyco/opencode/issues</url>
+-  <url type="homepage">https://opencode.ai</url>
+-  <url type="vcs-browser">https://github.com/anomalyco/opencode</url>
++  <url type="bugtracker">https://github.com/${channel === "enterprise" ? "keugenek/opencode-enterprise" : "anomalyco/opencode"}/issues</url>
++  <url type="homepage">${channel === "enterprise" ? "https://github.com/keugenek/opencode-enterprise" : "https://opencode.ai"}</url>
++  <url type="vcs-browser">https://github.com/${channel === "enterprise" ? "keugenek/opencode-enterprise" : "anomalyco/opencode"}</url>
+ 
+-  <screenshots>
++  ${
++    channel === "enterprise"
++      ? ""
++      : `<screenshots>
+     <screenshot type="default">
+       <image>https://raw.githubusercontent.com/anomalyco/opencode/b75d4d1c5ec449585d515c756fc81f080a157a9a/packages/web/src/assets/lander/screenshot.png</image>
+     </screenshot>
+-  </screenshots>
++  </screenshots>`
++  }
+ </component>
+ `
+ 
+diff --git a/packages/desktop/scripts/enterprise-build.test.ts b/packages/desktop/scripts/enterprise-build.test.ts
+new file mode 100644
+index 0000000..c93ed2e
+--- /dev/null
++++ b/packages/desktop/scripts/enterprise-build.test.ts
+@@ -0,0 +1,23 @@
++import { expect, test } from "bun:test"
++import { downloadCliToResources, resolveChannel } from "./utils"
++
++test("enterprise has its own installer identity and no upstream executable or publisher", async () => {
++  const previous = process.env.OPENCODE_CHANNEL
++  process.env.OPENCODE_CHANNEL = "enterprise"
++  try {
++    expect(resolveChannel()).toBe("enterprise")
++    const { default: config } = await import("../electron-builder.config.ts?enterprise-build")
++    expect(config.appId).toBe("io.github.keugenek.opencode.enterprise")
++    expect(config.productName).toBe("OpenCode Enterprise Desktop")
++    expect(config.publish).toBeNull()
++    expect(config.protocols).toEqual([])
++    expect(config.extraResources).toEqual([])
++    expect(config.nsis?.perMachine).toBe(true)
++    expect(config.forceCodeSigning).toBe(false)
++    expect(config.artifactName).toContain("opencode-enterprise-desktop-")
++    await expect(downloadCliToResources()).rejects.toThrow("cannot download an upstream CLI")
++  } finally {
++    if (previous === undefined) delete process.env.OPENCODE_CHANNEL
++    else process.env.OPENCODE_CHANNEL = previous
++  }
++})
+diff --git a/packages/desktop/scripts/prebuild.ts b/packages/desktop/scripts/prebuild.ts
+index 636850a..cddc69c 100644
+--- a/packages/desktop/scripts/prebuild.ts
++++ b/packages/desktop/scripts/prebuild.ts
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env bun
+ import { $ } from "bun"
++import { rm } from "node:fs/promises"
+ 
+ import { downloadCliToResources, resolveChannel } from "./utils"
+ 
+@@ -9,3 +10,7 @@ await $`bun ./scripts/copy-metainfo.ts ${channel}`
+ 
+ await $`cd ../opencode && bun script/build-node.ts`
+ if (channel === "dev") await downloadCliToResources()
++if (channel === "enterprise") {
++  // A reused checkout must not carry an upstream V2 binary into the candidate.
++  await Promise.all(["resources/opencode-cli", "resources/opencode-cli.exe"].map((file) => rm(file, { force: true })))
++}
+diff --git a/packages/desktop/scripts/predev.ts b/packages/desktop/scripts/predev.ts
+index bfa399e..5c6f44a 100644
+--- a/packages/desktop/scripts/predev.ts
++++ b/packages/desktop/scripts/predev.ts
+@@ -1,9 +1,9 @@
+ import { $ } from "bun"
+-import { downloadCliToResources } from "./utils"
++import { downloadCliToResources, resolveChannel } from "./utils"
+ 
+-await $`bun run install-electron`
++await $`node ./node_modules/electron/install.js`
+ 
+ await $`bun ./scripts/copy-icons.ts ${process.env.OPENCODE_CHANNEL ?? "dev"}`
+ 
+ await $`cd ../opencode && bun script/build-node.ts`
+-await downloadCliToResources()
++if (resolveChannel() !== "enterprise") await downloadCliToResources()
+diff --git a/packages/desktop/scripts/utils.ts b/packages/desktop/scripts/utils.ts
+index bf72875..f5c2564 100644
+--- a/packages/desktop/scripts/utils.ts
++++ b/packages/desktop/scripts/utils.ts
+@@ -5,11 +5,11 @@ import { join } from "node:path"
+ 
+ const CLI_VERSION = "0.0.0-next-16350"
+ 
+-export type Channel = "dev" | "beta" | "prod"
++export type Channel = "dev" | "beta" | "prod" | "enterprise"
+ 
+ export function resolveChannel(): Channel {
+   const raw = Bun.env.OPENCODE_CHANNEL
+-  if (raw === "dev" || raw === "beta" || raw === "prod") return raw
++  if (raw === "dev" || raw === "beta" || raw === "prod" || raw === "enterprise") return raw
+   return "dev"
+ }
+ 
+@@ -70,6 +70,7 @@ export function getCurrentCli(target = RUST_TARGET ?? nativeTarget()) {
+ }
+ 
+ export async function downloadCliToResources() {
++  if (resolveChannel() === "enterprise") throw new Error("Enterprise builds cannot download an upstream CLI")
+   const cli = getCurrentCli()
+   const directory = await mkdtemp(join(tmpdir(), "opencode-cli-"))
+   const dest = windowsify("resources/opencode-cli")
+diff --git a/packages/desktop/src/main/constants.ts b/packages/desktop/src/main/constants.ts
+index 258deb7..205e6aa 100644
+--- a/packages/desktop/src/main/constants.ts
++++ b/packages/desktop/src/main/constants.ts
+@@ -1,7 +1,8 @@
++import { ENTERPRISE } from "./enterprise"
+ import { app } from "electron"
+ 
+ type Channel = "dev" | "beta" | "prod"
+ const raw = import.meta.env.OPENCODE_CHANNEL
+ export const CHANNEL: Channel = raw === "dev" || raw === "beta" || raw === "prod" ? raw : "dev"
+ 
+-export const UPDATER_ENABLED = app.isPackaged && CHANNEL !== "dev"
++export const UPDATER_ENABLED = !ENTERPRISE && app.isPackaged && CHANNEL !== "dev"
+diff --git a/packages/desktop/src/main/enterprise.test.ts b/packages/desktop/src/main/enterprise.test.ts
+new file mode 100644
+index 0000000..40695f2
+--- /dev/null
++++ b/packages/desktop/src/main/enterprise.test.ts
+@@ -0,0 +1,62 @@
++import { describe, expect, test } from "bun:test"
++import {
++  enterpriseRequest,
++  enterpriseSidecarEnv,
++  enterpriseCsp,
++  setEnterpriseConnection,
++  validStoreName,
++} from "./enterprise"
++
++describe("native enterprise boundary", () => {
++  test("renderer can reach only bundled assets and its exact authenticated sidecar", () => {
++    setEnterpriseConnection({ url: "http://127.0.0.1:41965", password: "per-launch-credential-with-32-bytes" })
++    expect(enterpriseRequest("oc://renderer/index.html")).toEqual({ allowed: true })
++    expect(enterpriseRequest("http://127.0.0.1:41965/provider").authorization).toContain("Basic ")
++    expect(enterpriseRequest("ws://127.0.0.1:41965/pty/a/connect").authorization).toContain("Basic ")
++    for (const url of [
++      "https://opencode.ai",
++      "https://telemetry.invalid",
++      "http://localhost:41965",
++      "http://127.0.0.1:41966",
++      "https://127.0.0.1:41965",
++      "oc://foreign/index.html",
++    ]) {
++      expect(enterpriseRequest(url).allowed).toBe(false)
++    }
++    expect(enterpriseCsp()).toContain("connect-src 'self' http://127.0.0.1:41965 ws://127.0.0.1:41965")
++    expect(enterpriseCsp()).not.toContain("connect-src *")
++  })
++  test("sidecar environment cannot select V2, leak authentication or inject a remote renderer", () => {
++    const result = enterpriseSidecarEnv(
++      {
++        OPENCODE_SERVER_PASSWORD: "secret",
++        OPENCODE_SERVER_USERNAME: "user",
++        OPENCODE_SIDECAR_V2: "1",
++        ELECTRON_RENDERER_URL: "https://attacker.invalid",
++        OPENCODE_WORKSPACE_ID: "remote",
++        NODE_OPTIONS: "--require attack.js",
++        PATH: "/tools",
++      },
++      "/desktop/state",
++    )
++    expect(result.OPENCODE_SIDECAR_V2).toBe("0")
++    expect(result.OPENCODE_EXPERIMENTAL_ICON_DISCOVERY).toBe("false")
++    expect(result).not.toHaveProperty("OPENCODE_SERVER_PASSWORD")
++    expect(result).not.toHaveProperty("OPENCODE_SERVER_USERNAME")
++    expect(result).not.toHaveProperty("NODE_OPTIONS")
++    expect(result).not.toHaveProperty("ELECTRON_RENDERER_URL")
++    expect(result).not.toHaveProperty("OPENCODE_WORKSPACE_ID")
++    expect(result.PATH).toBe("/tools")
++  })
++  test("IPC store names cannot escape application state directory", () => {
++    expect(validStoreName("opencode.settings.dat")).toBe(true)
++    expect(validStoreName("opencode.window.123.dat")).toBe(true)
++    for (const name of [
++      "../enterprise.json",
++      "C:\\Program Files\\OpenCode Enterprise\\enterprise.json",
++      "opencode/../../policy",
++      "opencode..evil",
++    ])
++      expect(validStoreName(name)).toBe(false)
++  })
++})
+diff --git a/packages/desktop/src/main/enterprise.ts b/packages/desktop/src/main/enterprise.ts
+new file mode 100644
+index 0000000..e0186c7
+--- /dev/null
++++ b/packages/desktop/src/main/enterprise.ts
+@@ -0,0 +1,54 @@
++export const ENTERPRISE = import.meta.env?.OPENCODE_ENTERPRISE === true
++
++type Connection = { url: string; password: string }
++let connection: Connection | undefined
++
++export function setEnterpriseConnection(value: Connection) {
++  const url = new URL(value.url)
++  if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || !url.port || value.password.length < 24)
++    throw new Error("ERR_ENTERPRISE_SIDECAR_CONNECTION")
++  connection = { url: url.origin, password: value.password }
++}
++
++export function enterpriseRequest(value: string) {
++  const url = new URL(value)
++  if (url.protocol === "oc:" && url.host === "renderer") return { allowed: true }
++  if (["data:", "blob:"].includes(url.protocol)) return { allowed: true }
++  if (!connection) return { allowed: false }
++  const endpoint = new URL(connection.url)
++  if (!["http:", "ws:"].includes(url.protocol) || url.host !== endpoint.host) return { allowed: false }
++  return { allowed: true, authorization: `Basic ${Buffer.from(`opencode:${connection.password}`).toString("base64")}` }
++}
++
++export function enterpriseSidecarEnv(input: NodeJS.ProcessEnv, userDataPath: string) {
++  const env = Object.fromEntries(
++    Object.entries(input).flatMap(([key, value]) => (value === undefined ? [] : [[key, value]])),
++  )
++  for (const key of [
++    "OPENCODE_SERVER_PASSWORD",
++    "OPENCODE_SERVER_USERNAME",
++    "OPENCODE_WORKSPACE_ID",
++    "OPENCODE_PORT",
++    "ELECTRON_RENDERER_URL",
++    "NODE_OPTIONS",
++    "NODE_PATH",
++    "DEBUG",
++  ])
++    delete env[key]
++  return {
++    ...env,
++    OPENCODE_SIDECAR_V2: "0",
++    OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: "false",
++    OPENCODE_DISABLE_EMBEDDED_WEB_UI: "true",
++    XDG_STATE_HOME: userDataPath,
++  }
++}
++
++export function validStoreName(name: string) {
++  return /^opencode[\w.-]{0,180}$/.test(name) && !name.includes("..")
++}
++
++export function enterpriseCsp() {
++  const endpoint = connection?.url ?? "http://127.0.0.1:1"
++  return `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ${endpoint} ${endpoint.replace("http:", "ws:")}; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`
++}
+diff --git a/packages/desktop/src/main/env.d.ts b/packages/desktop/src/main/env.d.ts
+index d69e6fe..f7905d2 100644
+--- a/packages/desktop/src/main/env.d.ts
++++ b/packages/desktop/src/main/env.d.ts
+@@ -1,5 +1,6 @@
+ interface ImportMetaEnv {
+   readonly OPENCODE_CHANNEL: string
++  readonly OPENCODE_ENTERPRISE: boolean
+ }
+ 
+ interface ImportMeta {
+diff --git a/packages/desktop/src/main/index.ts b/packages/desktop/src/main/index.ts
+index 183fc63..84f49af 100644
+--- a/packages/desktop/src/main/index.ts
++++ b/packages/desktop/src/main/index.ts
+@@ -1,3 +1,4 @@
++import { ENTERPRISE, setEnterpriseConnection } from "./enterprise"
+ import { randomUUID } from "node:crypto"
+ import { mkdirSync, rmSync } from "node:fs"
+ import * as http from "node:http"
+@@ -6,7 +7,7 @@ import { homedir, tmpdir } from "node:os"
+ import { join } from "node:path"
+ import { getCACertificates, setDefaultCACertificates } from "node:tls"
+ import type { Event } from "electron"
+-import { app, BrowserWindow } from "electron"
++import { app, BrowserWindow, session } from "electron"
+ 
+ import { Deferred, Effect, Fiber } from "effect"
+ import contextMenu from "electron-context-menu"
+@@ -61,7 +62,7 @@ const APP_IDS: Record<string, string> = {
+   prod: "ai.opencode.desktop",
+ }
+ const TEST_ONBOARDING = process.env.OPENCODE_TEST_ONBOARDING === "1"
+-const SIDECAR_VERSION = process.env.OPENCODE_SIDECAR_V2 === "1" ? "v2" : "v1"
++const SIDECAR_VERSION = !ENTERPRISE && process.env.OPENCODE_SIDECAR_V2 === "1" ? "v2" : "v1"
+ const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
+ 
+ let logger: ReturnType<typeof initLogging>
+@@ -70,6 +71,7 @@ let server: SidecarListener | null = null
+ const pendingDeepLinks: string[] = []
+ 
+ function useEnvProxy() {
++  if (ENTERPRISE) return
+   try {
+     // Electron 41.2 runs Node 24.14.1; latest @types/node@24 is 24.12.2.
+     ;(http as any).setGlobalProxyFromEnv()
+@@ -79,7 +81,7 @@ function useEnvProxy() {
+ }
+ 
+ function emitDeepLinks(urls: string[]) {
+-  if (urls.length === 0) return
++  if (ENTERPRISE || urls.length === 0) return
+   pendingDeepLinks.push(...urls)
+   const win = getLastFocusedWindow()
+   if (win) sendDeepLinks(win, urls)
+@@ -122,7 +124,11 @@ const main = Effect.gen(function* () {
+ 
+   process.env.OPENCODE_DISABLE_EMBEDDED_WEB_UI = "true"
+ 
+-  const appId = app.isPackaged ? APP_IDS[CHANNEL] : "ai.opencode.desktop.dev"
++  const appId = ENTERPRISE
++    ? "io.github.keugenek.opencode.enterprise"
++    : app.isPackaged
++      ? APP_IDS[CHANNEL]
++      : "ai.opencode.desktop.dev"
+   const onboardingTestRoot = ((): string | undefined => {
+     if (!TEST_ONBOARDING) return
+ 
+@@ -138,7 +144,7 @@ const main = Effect.gen(function* () {
+     process.env.XDG_STATE_HOME = join(root, "state")
+     return root
+   })()
+-  app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "OpenCode Dev")
++  app.setName(ENTERPRISE ? "OpenCode Enterprise Desktop" : app.isPackaged ? APP_NAMES[CHANNEL] : "OpenCode Dev")
+   app.setAppUserModelId(appId)
+   app.setPath(
+     "userData",
+@@ -190,10 +196,10 @@ const main = Effect.gen(function* () {
+ 
+   ensureLoopbackNoProxy()
+   useEnvProxy()
+-  app.commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
++  if (!ENTERPRISE) app.commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
+   const features = app.commandLine.getSwitchValue("enable-features")
+   app.commandLine.appendSwitch("enable-features", features ? `${jsCallStackFeature},${features}` : jsCallStackFeature)
+-  if (!app.isPackaged) app.commandLine.appendSwitch("remote-debugging-port", "9222")
++  if (!ENTERPRISE && !app.isPackaged) app.commandLine.appendSwitch("remote-debugging-port", "9222")
+ 
+   if (!app.requestSingleInstanceLock()) {
+     app.quit()
+@@ -253,8 +259,11 @@ const main = Effect.gen(function* () {
+   const serverReady = Deferred.makeUnsafe<ServerReadyData, unknown>()
+ 
+   yield* Effect.promise(() => app.whenReady())
++  // Renderer traffic is bundled UI plus a credentialed loopback sidecar only.
++  // Its Basic credentials must never pass through a system/browser HTTP proxy.
++  if (ENTERPRISE) yield* Effect.promise(() => session.defaultSession.setProxy({ mode: "direct" }))
+ 
+-  if (!TEST_ONBOARDING) migrate()
++  if (!ENTERPRISE && !TEST_ONBOARDING) migrate()
+   yield* Effect.promise(() => cleanupStoreFiles(app.getPath("userData"))).pipe(
+     Effect.tap((result) =>
+       Effect.sync(() => {
+@@ -268,7 +277,7 @@ const main = Effect.gen(function* () {
+       }),
+     ),
+   )
+-  app.setAsDefaultProtocolClient("opencode")
++  if (!ENTERPRISE) app.setAsDefaultProtocolClient("opencode")
+   registerRendererProtocol()
+   setDockIcon()
+   const updater = setupAutoUpdater(stopSidecars)
+@@ -339,7 +348,7 @@ const main = Effect.gen(function* () {
+         password: sidecar.password,
+       })
+ 
+-      if (process.platform === "win32") {
++      if (!ENTERPRISE && process.platform === "win32") {
+         void wslServers.initialize().catch((error) => logger.error("wsl server initialization failed", error))
+       }
+ 
+@@ -348,7 +357,7 @@ const main = Effect.gen(function* () {
+     }
+ 
+     const port = yield* Effect.gen(function* () {
+-      const fromEnv = process.env.OPENCODE_PORT
++      const fromEnv = ENTERPRISE ? undefined : process.env.OPENCODE_PORT
+       if (fromEnv) {
+         const parsed = Number.parseInt(fromEnv, 10)
+         if (!Number.isNaN(parsed)) return parsed
+@@ -384,13 +393,14 @@ const main = Effect.gen(function* () {
+       }),
+     )
+     server = listener
++    if (ENTERPRISE) setEnterpriseConnection({ url, password })
+     yield* Deferred.succeed(serverReady, {
+       url,
+       username: "opencode",
+       password,
+     })
+ 
+-    if (process.platform === "win32") {
++    if (!ENTERPRISE && process.platform === "win32") {
+       void wslServers.initialize().catch((error) => logger.error("wsl server initialization failed", error))
+     }
+ 
+diff --git a/packages/desktop/src/main/ipc.ts b/packages/desktop/src/main/ipc.ts
+index d8abfc1..3699ce2 100644
+--- a/packages/desktop/src/main/ipc.ts
++++ b/packages/desktop/src/main/ipc.ts
+@@ -1,3 +1,4 @@
++import { ENTERPRISE } from "./enterprise"
+ import { execFile } from "node:child_process"
+ import { stat } from "node:fs/promises"
+ import { basename, join } from "node:path"
+@@ -25,6 +26,30 @@ import { createUpdaterSubscriptions } from "./updater-subscriptions"
+ import { createDesktopDraftStore } from "./draft-store"
+ import { nativeT } from "./native-translations"
+ 
++function senderAllowed(event: IpcMainInvokeEvent | IpcMainEvent) {
++  if (!ENTERPRISE) return true
++  const win = BrowserWindow.fromWebContents(event.sender)
++  return Boolean(
++    win &&
++      !win.isDestroyed() &&
++      event.senderFrame === event.sender.mainFrame &&
++      event.senderFrame?.url.startsWith("oc://renderer/"),
++  )
++}
++
++function handle<T extends unknown[], R>(channel: string, listener: (event: IpcMainInvokeEvent, ...args: T) => R) {
++  ipcMain.handle(channel, (event, ...args) => {
++    if (!senderAllowed(event)) throw new Error("ERR_ENTERPRISE_IPC_SENDER")
++    return listener(event, ...(args as T))
++  })
++}
++
++function on<T extends unknown[]>(channel: string, listener: (event: IpcMainEvent, ...args: T) => void) {
++  ipcMain.on(channel, (event, ...args) => {
++    if (senderAllowed(event)) listener(event, ...(args as T))
++  })
++}
++
+ const pickerFilters = (ext?: string[]) => {
+   if (!ext || ext.length === 0) return undefined
+   return [{ name: nativeT("desktop.dialog.files"), extensions: ext }]
+@@ -55,6 +80,10 @@ type Deps = {
+ }
+ 
+ export function registerIpcHandlers(deps: Deps) {
++  if (ENTERPRISE)
++    handle("install-cli", () => {
++      throw new Error("ERR_ENTERPRISE_INSTALL_DISABLED")
++    })
+   const drafts = createDesktopDraftStore(join(app.getPath("userData"), "drafts.sqlite"))
+   const updaterSubscriptions = createUpdaterSubscriptions()
+   app.once("will-quit", updaterSubscriptions.clear)
+@@ -62,25 +91,21 @@ export function registerIpcHandlers(deps: Deps) {
+   app.once("will-quit", () => drafts.close())
+   app.on("browser-window-created", (_event, win) => win.on("session-end", () => drafts.flush()))
+ 
+-  ipcMain.handle("kill-sidecar", () => deps.killSidecar())
+-  ipcMain.handle("await-initialization", () => deps.awaitInitialization())
+-  ipcMain.handle("consume-initial-deep-links", () => deps.consumeInitialDeepLinks())
+-  ipcMain.handle("get-default-server-url", () => deps.getDefaultServerUrl())
+-  ipcMain.handle("set-default-server-url", (_event: IpcMainInvokeEvent, url: string | null) =>
+-    deps.setDefaultServerUrl(url),
+-  )
+-  ipcMain.handle("is-first-launch-onboarding-pending", () => deps.isFirstLaunchOnboardingPending())
+-  ipcMain.handle("finish-first-launch-onboarding", (_event: IpcMainInvokeEvent, createDefaultProject: boolean) =>
++  handle("kill-sidecar", () => deps.killSidecar())
++  handle("await-initialization", () => deps.awaitInitialization())
++  handle("consume-initial-deep-links", () => deps.consumeInitialDeepLinks())
++  handle("get-default-server-url", () => deps.getDefaultServerUrl())
++  handle("set-default-server-url", (_event: IpcMainInvokeEvent, url: string | null) => deps.setDefaultServerUrl(url))
++  handle("is-first-launch-onboarding-pending", () => deps.isFirstLaunchOnboardingPending())
++  handle("finish-first-launch-onboarding", (_event: IpcMainInvokeEvent, createDefaultProject: boolean) =>
+     deps.finishFirstLaunchOnboarding(createDefaultProject),
+   )
+-  ipcMain.handle("is-old-layout-eligible", () => deps.isOldLayoutEligible())
+-  ipcMain.handle("get-display-backend", () => deps.getDisplayBackend())
+-  ipcMain.handle("set-display-backend", (_event: IpcMainInvokeEvent, backend: string | null) =>
+-    deps.setDisplayBackend(backend),
+-  )
+-  ipcMain.handle("check-app-exists", (_event: IpcMainInvokeEvent, appName: string) => deps.checkAppExists(appName))
+-  ipcMain.handle("resolve-app-path", (_event: IpcMainInvokeEvent, appName: string) => deps.resolveAppPath(appName))
+-  ipcMain.handle("updater-subscribe", (event) => {
++  handle("is-old-layout-eligible", () => deps.isOldLayoutEligible())
++  handle("get-display-backend", () => deps.getDisplayBackend())
++  handle("set-display-backend", (_event: IpcMainInvokeEvent, backend: string | null) => deps.setDisplayBackend(backend))
++  handle("check-app-exists", (_event: IpcMainInvokeEvent, appName: string) => deps.checkAppExists(appName))
++  handle("resolve-app-path", (_event: IpcMainInvokeEvent, appName: string) => deps.resolveAppPath(appName))
++  handle("updater-subscribe", (event) => {
+     const id = event.sender.id
+     updaterSubscriptions.set(
+       id,
+@@ -91,18 +116,16 @@ export function registerIpcHandlers(deps: Deps) {
+     )
+     event.sender.once("destroyed", () => updaterSubscriptions.delete(id))
+   })
+-  ipcMain.handle("updater-unsubscribe", (event) => updaterSubscriptions.delete(event.sender.id))
+-  ipcMain.handle("updater-check", () => deps.updater.check())
+-  ipcMain.handle("updater-install", () => deps.updater.install())
+-  ipcMain.handle("set-background-color", (_event: IpcMainInvokeEvent, color: string) => deps.setBackgroundColor(color))
+-  ipcMain.handle("export-debug-logs", () => deps.exportDebugLogs())
+-  ipcMain.handle("set-force-focus", (event: IpcMainInvokeEvent, enabled: boolean) =>
+-    setForceFocus(event.sender, enabled),
+-  )
+-  ipcMain.handle("record-fatal-renderer-error", (_event: IpcMainInvokeEvent, error: FatalRendererError) =>
++  handle("updater-unsubscribe", (event) => updaterSubscriptions.delete(event.sender.id))
++  handle("updater-check", () => deps.updater.check())
++  handle("updater-install", () => deps.updater.install())
++  handle("set-background-color", (_event: IpcMainInvokeEvent, color: string) => deps.setBackgroundColor(color))
++  handle("export-debug-logs", () => deps.exportDebugLogs())
++  handle("set-force-focus", (event: IpcMainInvokeEvent, enabled: boolean) => setForceFocus(event.sender, enabled))
++  handle("record-fatal-renderer-error", (_event: IpcMainInvokeEvent, error: FatalRendererError) =>
+     deps.recordFatalRendererError(error),
+   )
+-  ipcMain.handle("set-native-translations", (event: IpcMainInvokeEvent, value: unknown) => {
++  handle("set-native-translations", (event: IpcMainInvokeEvent, value: unknown) => {
+     const win = BrowserWindow.fromWebContents(event.sender)
+     if (!win || win.isDestroyed() || win.webContents !== event.sender || event.senderFrame !== event.sender.mainFrame) {
+       throw new Error("Invalid native translation sender")
+@@ -111,7 +134,7 @@ export function registerIpcHandlers(deps: Deps) {
+     if (!bundle) throw new Error("Invalid native translation bundle")
+     deps.setNativeTranslations(bundle)
+   })
+-  ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {
++  handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {
+     try {
+       const store = getStore(name)
+       const value = store.get(key)
+@@ -121,35 +144,35 @@ export function registerIpcHandlers(deps: Deps) {
+       return null
+     }
+   })
+-  ipcMain.handle("store-set", (_event: IpcMainInvokeEvent, name: string, key: string, value: string) => {
++  handle("store-set", (_event: IpcMainInvokeEvent, name: string, key: string, value: string) => {
+     getStore(name).set(key, value)
+   })
+-  ipcMain.handle("store-delete", (_event: IpcMainInvokeEvent, name: string, key: string) => {
++  handle("store-delete", (_event: IpcMainInvokeEvent, name: string, key: string) => {
+     getStore(name).delete(key)
+     void removeStoreFileIfEmpty(name)
+   })
+-  ipcMain.handle("store-clear", (_event: IpcMainInvokeEvent, name: string) => {
++  handle("store-clear", (_event: IpcMainInvokeEvent, name: string) => {
+     getStore(name).clear()
+     void removeStoreFileIfEmpty(name)
+   })
+-  ipcMain.handle("store-keys", (_event: IpcMainInvokeEvent, name: string) => {
++  handle("store-keys", (_event: IpcMainInvokeEvent, name: string) => {
+     const store = getStore(name)
+     return Object.keys(store.store)
+   })
+-  ipcMain.handle("store-length", (_event: IpcMainInvokeEvent, name: string) => {
++  handle("store-length", (_event: IpcMainInvokeEvent, name: string) => {
+     const store = getStore(name)
+     return Object.keys(store.store).length
+   })
+-  ipcMain.handle("draft-get", (_event, key: string) => drafts.get(key))
+-  ipcMain.handle("draft-set", (_event, key: string, value: string) => drafts.set(key, value))
+-  ipcMain.handle("draft-delete", (_event, key: string) => drafts.set(key, null))
+-  ipcMain.handle("draft-blob-put", (_event, data: ArrayBuffer) => drafts.putBlob(new Uint8Array(data)))
+-  ipcMain.handle("draft-blob-get", (_event, id: string) => {
++  handle("draft-get", (_event, key: string) => drafts.get(key))
++  handle("draft-set", (_event, key: string, value: string) => drafts.set(key, value))
++  handle("draft-delete", (_event, key: string) => drafts.set(key, null))
++  handle("draft-blob-put", (_event, data: ArrayBuffer) => drafts.putBlob(new Uint8Array(data)))
++  handle("draft-blob-get", (_event, id: string) => {
+     const data = drafts.getBlob(id)
+     return data ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : null
+   })
+ 
+-  ipcMain.handle(
++  handle(
+     "open-directory-picker",
+     async (_event: IpcMainInvokeEvent, opts?: { multiple?: boolean; title?: string; defaultPath?: string }) => {
+       const result = await dialog.showOpenDialog({
+@@ -162,7 +185,7 @@ export function registerIpcHandlers(deps: Deps) {
+     },
+   )
+ 
+-  ipcMain.handle(
++  handle(
+     "open-file-picker",
+     async (
+       event: IpcMainInvokeEvent,
+@@ -188,35 +211,36 @@ export function registerIpcHandlers(deps: Deps) {
+     },
+   )
+ 
+-  ipcMain.handle("read-picked-file", async (event: IpcMainInvokeEvent, token: string, filePath: string) => {
++  handle("read-picked-file", async (event: IpcMainInvokeEvent, token: string, filePath: string) => {
+     return pickedFiles.read(event.sender.id, token, filePath)
+   })
+ 
+-  ipcMain.handle("release-picked-files", (event: IpcMainInvokeEvent, token: string) => {
++  handle("release-picked-files", (event: IpcMainInvokeEvent, token: string) => {
+     pickedFiles.release(event.sender.id, token)
+   })
+ 
+-  ipcMain.handle(
+-    "save-file-picker",
+-    async (_event: IpcMainInvokeEvent, opts?: { title?: string; defaultPath?: string }) => {
+-      const result = await dialog.showSaveDialog({
+-        title: opts?.title ?? nativeT("desktop.dialog.saveFile"),
+-        defaultPath: opts?.defaultPath,
+-      })
+-      if (result.canceled) return null
+-      return result.filePath ?? null
+-    },
+-  )
++  handle("save-file-picker", async (_event: IpcMainInvokeEvent, opts?: { title?: string; defaultPath?: string }) => {
++    const result = await dialog.showSaveDialog({
++      title: opts?.title ?? nativeT("desktop.dialog.saveFile"),
++      defaultPath: opts?.defaultPath,
++    })
++    if (result.canceled) return null
++    return result.filePath ?? null
++  })
+ 
+-  ipcMain.on("open-external", (_event: IpcMainEvent, url: string) => {
++  on("open-external", (_event: IpcMainEvent, url: string) => {
+     openExternalURL(url)
+   })
+ 
+-  ipcMain.on("open-local-file", (_event: IpcMainEvent, url: string) => {
++  on("open-local-file", (_event: IpcMainEvent, url: string) => {
+     openLocalFileURL(url)
+   })
+ 
+-  ipcMain.handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
++  handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
++    if (ENTERPRISE) {
++      shell.showItemInFolder(path)
++      return
++    }
+     if (!app) return shell.openPath(path)
+     await new Promise<void>((resolve, reject) => {
+       const [cmd, args] =
+@@ -225,7 +249,7 @@ export function registerIpcHandlers(deps: Deps) {
+     })
+   })
+ 
+-  ipcMain.handle("reveal-path", async (_event: IpcMainInvokeEvent, path: string) => {
++  handle("reveal-path", async (_event: IpcMainInvokeEvent, path: string) => {
+     const exists = await stat(path).then(
+       () => true,
+       () => false,
+@@ -235,7 +259,7 @@ export function registerIpcHandlers(deps: Deps) {
+     return true
+   })
+ 
+-  ipcMain.handle("read-clipboard-image", () => {
++  handle("read-clipboard-image", () => {
+     const image = clipboard.readImage()
+     if (image.isEmpty()) return null
+     const buffer = image.toPNG().buffer
+@@ -243,7 +267,7 @@ export function registerIpcHandlers(deps: Deps) {
+     return { buffer, width: size.width, height: size.height }
+   })
+ 
+-  ipcMain.handle("get-window-id", (event: IpcMainInvokeEvent) => {
++  handle("get-window-id", (event: IpcMainInvokeEvent) => {
+     const win = BrowserWindow.fromWebContents(event.sender)
+     if (!win) throw new Error("Window not found")
+     const id = getWindowID(win)
+@@ -251,47 +275,47 @@ export function registerIpcHandlers(deps: Deps) {
+     return id
+   })
+ 
+-  ipcMain.handle("get-window-focused", (event: IpcMainInvokeEvent) => {
++  handle("get-window-focused", (event: IpcMainInvokeEvent) => {
+     const win = BrowserWindow.fromWebContents(event.sender)
+     return win?.isFocused() ?? false
+   })
+ 
+-  ipcMain.handle("get-window-fullscreen", (event: IpcMainInvokeEvent) => {
++  handle("get-window-fullscreen", (event: IpcMainInvokeEvent) => {
+     const win = BrowserWindow.fromWebContents(event.sender)
+     return win?.isFullScreen() ?? false
+   })
+ 
+-  ipcMain.handle("set-window-focus", (event: IpcMainInvokeEvent) => {
++  handle("set-window-focus", (event: IpcMainInvokeEvent) => {
+     const win = BrowserWindow.fromWebContents(event.sender)
+     win?.focus()
+   })
+ 
+-  ipcMain.handle("show-window", (event: IpcMainInvokeEvent) => {
++  handle("show-window", (event: IpcMainInvokeEvent) => {
+     const win = BrowserWindow.fromWebContents(event.sender)
+     win?.show()
+   })
+ 
+-  ipcMain.on("relaunch", () => {
++  on("relaunch", () => {
+     deps.relaunch()
+   })
+ 
+-  ipcMain.handle("get-zoom-factor", (event: IpcMainInvokeEvent) => event.sender.getZoomFactor())
+-  ipcMain.handle("set-zoom-factor", (event: IpcMainInvokeEvent, factor: number) => {
++  handle("get-zoom-factor", (event: IpcMainInvokeEvent) => event.sender.getZoomFactor())
++  handle("set-zoom-factor", (event: IpcMainInvokeEvent, factor: number) => {
+     event.sender.setZoomFactor(factor)
+     const win = BrowserWindow.fromWebContents(event.sender)
+     if (!win) return
+     updateTitlebar(win)
+   })
+-  ipcMain.handle("get-pinch-zoom-enabled", () => getPinchZoomEnabled())
+-  ipcMain.handle("set-pinch-zoom-enabled", (_event: IpcMainInvokeEvent, enabled: boolean) => {
++  handle("get-pinch-zoom-enabled", () => getPinchZoomEnabled())
++  handle("set-pinch-zoom-enabled", (_event: IpcMainInvokeEvent, enabled: boolean) => {
+     setPinchZoomEnabled(enabled)
+   })
+-  ipcMain.handle("set-titlebar", (event: IpcMainInvokeEvent, theme: TitlebarTheme) => {
++  handle("set-titlebar", (event: IpcMainInvokeEvent, theme: TitlebarTheme) => {
+     const win = BrowserWindow.fromWebContents(event.sender)
+     if (!win) return
+     setTitlebar(win, theme)
+   })
+-  ipcMain.handle("run-desktop-menu-action", (event: IpcMainInvokeEvent, action: DesktopMenuAction) => {
++  handle("run-desktop-menu-action", (event: IpcMainInvokeEvent, action: DesktopMenuAction) => {
+     runDesktopMenuAction(BrowserWindow.fromWebContents(event.sender), action, {
+       checkForUpdates: () => void deps.showUpdater(),
+       relaunch: deps.relaunch,
+diff --git a/packages/desktop/src/main/logging.ts b/packages/desktop/src/main/logging.ts
+index b8fc260..b359bf9 100644
+--- a/packages/desktop/src/main/logging.ts
++++ b/packages/desktop/src/main/logging.ts
+@@ -1,3 +1,4 @@
++import { ENTERPRISE } from "./enterprise"
+ import { MainLogger } from "electron-log"
+ import log from "electron-log/main.js"
+ import { app, crashReporter, netLog, shell } from "electron"
+@@ -34,6 +35,7 @@ export function initLogging() {
+ }
+ 
+ export function initCrashReporter() {
++  if (ENTERPRISE) return
+   const dir = join(app.getPath("userData"), "Crashpad")
+   mkdirSync(dir, { recursive: true })
+   app.setPath("crashDumps", dir)
+@@ -42,6 +44,7 @@ export function initCrashReporter() {
+ }
+ 
+ export async function startNetLog() {
++  if (ENTERPRISE) return
+   if (netLog.currentlyLogging) return
+   netLogPath = join(run, "network.netlog")
+   await netLog.startLogging(netLogPath, { captureMode: "default", maxFileSize: NET_LOG_SIZE })
+diff --git a/packages/desktop/src/main/server.ts b/packages/desktop/src/main/server.ts
+index ae1a98e..bd40705 100644
+--- a/packages/desktop/src/main/server.ts
++++ b/packages/desktop/src/main/server.ts
+@@ -1,3 +1,4 @@
++import { ENTERPRISE, enterpriseSidecarEnv } from "./enterprise"
+ import { dirname, join } from "node:path"
+ import { fileURLToPath } from "node:url"
+ import { app, utilityProcess } from "electron"
+@@ -28,11 +29,16 @@ type SpawnLocalServerOptions = {
+ }
+ 
+ export function getDefaultServerUrl(): string | null {
++  if (ENTERPRISE) return null
+   const value = getStore().get(DEFAULT_SERVER_URL_KEY)
+   return typeof value === "string" ? value : null
+ }
+ 
+ export function setDefaultServerUrl(url: string | null) {
++  if (ENTERPRISE) {
++    getStore().delete(DEFAULT_SERVER_URL_KEY)
++    return
++  }
+   if (url) {
+     getStore().set(DEFAULT_SERVER_URL_KEY, url)
+     return
+@@ -46,7 +52,7 @@ export function preferAppEnv(userDataPath: string) {
+   const shellEnv = shell ? loadShellEnv(shell, getLogger()) : null
+   Object.assign(process.env, {
+     ...shellEnv,
+-    OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: "true",
++    OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: ENTERPRISE ? "false" : "true",
+     OPENCODE_EXPERIMENTAL_FILEWATCHER: "true",
+     OPENCODE_CLIENT: "desktop",
+     XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? userDataPath,
+@@ -63,7 +69,7 @@ export async function spawnLocalServer(
+   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
+   const child = utilityProcess.fork(sidecar, [], {
+     cwd: process.cwd(),
+-    env: createSidecarEnv(),
++    env: ENTERPRISE ? enterpriseSidecarEnv(process.env, options.userDataPath) : createSidecarEnv(),
+     serviceName: SIDECAR_SERVICE_NAME,
+     stdio: "pipe",
+   })
+@@ -186,7 +192,9 @@ export async function spawnLocalServer(
+ export async function checkHealth(url: string, password?: string | null): Promise<boolean> {
+   let healthUrls: URL[]
+   try {
+-    healthUrls = [new URL("/api/health", url), new URL("/global/health", url)]
++    healthUrls = ENTERPRISE
++      ? [new URL("/global/health", url)]
++      : [new URL("/api/health", url), new URL("/global/health", url)]
+   } catch {
+     return false
+   }
+diff --git a/packages/desktop/src/main/sidecar.ts b/packages/desktop/src/main/sidecar.ts
+index 246871f..e37a084 100644
+--- a/packages/desktop/src/main/sidecar.ts
++++ b/packages/desktop/src/main/sidecar.ts
+@@ -1,3 +1,4 @@
++import { ENTERPRISE } from "./enterprise"
+ import * as http from "node:http"
+ import * as tls from "node:tls"
+ 
+@@ -81,6 +82,13 @@ async function stop() {
+ }
+ 
+ function prepareSidecarEnv(password: string, userDataPath: string) {
++  if (ENTERPRISE) {
++    delete process.env.OPENCODE_SERVER_PASSWORD
++    delete process.env.OPENCODE_SERVER_USERNAME
++    process.env.OPENCODE_SIDECAR_V2 = "0"
++    process.env.XDG_STATE_HOME = userDataPath
++    return
++  }
+   Object.assign(process.env, {
+     OPENCODE_SERVER_USERNAME: "opencode",
+     OPENCODE_SERVER_PASSWORD: password,
+@@ -136,6 +144,15 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
+   if (typeof command.port !== "number") return
+   if (typeof command.password !== "string") return
+   if (typeof command.userDataPath !== "string") return
++  if (
++    ENTERPRISE &&
++    (command.hostname !== "127.0.0.1" ||
++      !Number.isInteger(command.port) ||
++      command.port < 1 ||
++      command.port > 65535 ||
++      command.password.length < 24)
++  )
++    return
+   return {
+     type: "start",
+     hostname: command.hostname,
+diff --git a/packages/desktop/src/main/store.ts b/packages/desktop/src/main/store.ts
+index 687429e..513492c 100644
+--- a/packages/desktop/src/main/store.ts
++++ b/packages/desktop/src/main/store.ts
+@@ -1,3 +1,4 @@
++import { ENTERPRISE, validStoreName } from "./enterprise"
+ import Store from "electron-store"
+ import electron from "electron"
+ import { rmSync } from "node:fs"
+@@ -13,6 +14,7 @@ const cache = new Map<string, Store>()
+ // in index.ts has executed, which would result in files being written to the default directory
+ // (e.g. bad: %APPDATA%\@opencode-ai\desktop\opencode.settings vs good: %APPDATA%\ai.opencode.desktop.dev\opencode.settings).
+ export function getStore(name = SETTINGS_STORE) {
++  if (ENTERPRISE && !validStoreName(name)) throw new Error("ERR_ENTERPRISE_STORE_NAME")
+   const cached = cache.get(name)
+   if (cached) return cached
+   const next = new Store({
+diff --git a/packages/desktop/src/main/windows.ts b/packages/desktop/src/main/windows.ts
+index 6e7b8f3..6233e8e 100644
+--- a/packages/desktop/src/main/windows.ts
++++ b/packages/desktop/src/main/windows.ts
+@@ -1,3 +1,5 @@
++import { sep } from "node:path"
++import { ENTERPRISE, enterpriseRequest, enterpriseCsp } from "./enterprise"
+ import windowState from "electron-window-state"
+ import { resolveThemeVariant } from "@opencode-ai/ui/theme/resolve"
+ import type { DesktopTheme } from "@opencode-ai/ui/theme/types"
+@@ -208,8 +210,25 @@ export function createMainWindow(id: string = randomUUID()) {
+   wireWindowRecovery(win, id)
+   wireNavigationPolicy(win)
+ 
++  if (ENTERPRISE) {
++    win.webContents.session.webRequest.onBeforeRequest((details, callback) => {
++      const local =
++        details.url.startsWith("file:") &&
++        (() => {
++          const candidate = relative(rendererRoot, fileURLToPath(details.url))
++          return candidate !== ".." && !candidate.startsWith(".." + sep) && !isAbsolute(candidate)
++        })()
++      callback({ cancel: !local && !enterpriseRequest(details.url).allowed })
++    })
++  }
+   win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
+     const { requestHeaders } = details
++    if (ENTERPRISE) {
++      const policy = enterpriseRequest(details.url)
++      if (policy.authorization) upsertKeyValue(requestHeaders, "Authorization", [policy.authorization])
++      callback({ requestHeaders })
++      return
++    }
+     upsertKeyValue(requestHeaders, "Access-Control-Allow-Origin", ["*"])
+     callback({ requestHeaders })
+   })
+@@ -234,6 +253,7 @@ export function createMainWindow(id: string = randomUUID()) {
+ }
+ 
+ export function openExternalURL(value: string) {
++  if (ENTERPRISE) return
+   const url = resolveExternalURL(value)
+   if (!url) {
+     writeLog("window", "blocked external target", { url: value }, "warn")
+@@ -243,6 +263,7 @@ export function openExternalURL(value: string) {
+ }
+ 
+ export function openLocalFileURL(value: string) {
++  if (ENTERPRISE) return
+   const path = resolveLocalFilePath(value)
+   if (!path) {
+     writeLog("window", "blocked local file target", { url: value }, "warn")
+@@ -332,7 +353,7 @@ export function registerRendererProtocol() {
+ }
+ 
+ function loadWindow(win: BrowserWindow, html: string) {
+-  const devUrl = process.env.ELECTRON_RENDERER_URL
++  const devUrl = ENTERPRISE ? undefined : process.env.ELECTRON_RENDERER_URL
+   if (devUrl) {
+     const url = new URL(html, devUrl)
+     void win.loadURL(url.toString())
+@@ -475,6 +496,7 @@ function addDocumentPolicy(response: Response, file: string) {
+   if (!file.toLowerCase().endsWith(".html")) return response
+   const headers = new Headers(response.headers)
+   headers.set(documentPolicyHeader, jsCallStacksDocumentPolicy)
++  if (ENTERPRISE) headers.set("Content-Security-Policy", enterpriseCsp())
+   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+ }
+ 
+@@ -500,6 +522,10 @@ function isTrustedRendererUrl(value?: string) {
+ }
+ 
+ function addRendererHeaders(value: string, headers: Record<string, any>) {
++  if (ENTERPRISE) {
++    if (isRendererUrl(value, true)) upsertKeyValue(headers, "Content-Security-Policy", [enterpriseCsp()])
++    return
++  }
+   upsertKeyValue(headers, "Access-Control-Allow-Origin", ["*"])
+   upsertKeyValue(headers, "Access-Control-Allow-Headers", ["*"])
+   if (isRendererUrl(value, true)) upsertKeyValue(headers, documentPolicyHeader, [jsCallStacksDocumentPolicy])
+@@ -510,7 +536,7 @@ function isRendererUrl(value?: string, html = false) {
+   const url = new URL(value)
+   if (html && !url.pathname.endsWith(".html")) return false
+   if (url.protocol === `${rendererProtocol}:` && url.host === rendererHost) return true
+-  const devUrl = process.env.ELECTRON_RENDERER_URL
++  const devUrl = ENTERPRISE ? undefined : process.env.ELECTRON_RENDERER_URL
+   if (!devUrl || !URL.canParse(devUrl)) return false
+   return url.origin === new URL(devUrl).origin
+ }
+diff --git a/packages/desktop/src/main/wsl/ipc.ts b/packages/desktop/src/main/wsl/ipc.ts
+index 839efad..42ef810 100644
+--- a/packages/desktop/src/main/wsl/ipc.ts
++++ b/packages/desktop/src/main/wsl/ipc.ts
+@@ -1,3 +1,4 @@
++import { ENTERPRISE } from "../enterprise"
+ import { app, ipcMain } from "electron"
+ import type { IpcMainInvokeEvent } from "electron"
+ import type { WslServersController } from "./servers"
+@@ -6,7 +7,7 @@ import type { WslServersState } from "../../preload/types"
+ import { nativeT } from "../native-translations"
+ 
+ export function registerWslIpcHandlers(controller: WslServersController) {
+-  if (process.platform !== "win32") {
++  if (ENTERPRISE || process.platform !== "win32") {
+     registerUnavailableWslIpcHandlers()
+     return
+   }
+diff --git a/packages/desktop/src/renderer/index.tsx b/packages/desktop/src/renderer/index.tsx
+index 496060e..6c34383 100644
+--- a/packages/desktop/src/renderer/index.tsx
++++ b/packages/desktop/src/renderer/index.tsx
+@@ -14,6 +14,8 @@ import {
+   useCommand,
+   useWslServers,
+   useLanguage,
++  enterprise,
++  enterpriseDesktop,
+ } from "@opencode-ai/app"
+ import type { UpdaterState } from "@opencode-ai/app/updater"
+ import * as Sentry from "@sentry/solid"
+@@ -37,7 +39,7 @@ if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
+   throw new Error(t("desktop.error.dev.rootNotFound"))
+ }
+ 
+-if (import.meta.env.VITE_SENTRY_DSN) {
++if (!enterprise && import.meta.env.VITE_SENTRY_DSN) {
+   Sentry.init({
+     dsn: import.meta.env.VITE_SENTRY_DSN,
+     environment: import.meta.env.VITE_SENTRY_ENVIRONMENT ?? import.meta.env.MODE,
+@@ -61,7 +63,7 @@ if (import.meta.env.VITE_SENTRY_DSN) {
+ }
+ 
+ const [updaterState, setUpdaterState] = createSignal<UpdaterState>({ status: "disabled" })
+-void window.api.updater.subscribe(setUpdaterState)
++if (!enterprise) void window.api.updater.subscribe(setUpdaterState)
+ 
+ const deepLinkEvent = "opencode:deep-link"
+ 
+@@ -121,6 +123,7 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
+   })()
+ 
+   const runDesktopMenuAction: Platform["runDesktopMenuAction"] = (action) => {
++    if (enterprise && action === "app.checkForUpdates") return
+     switch (action) {
+       case "view.resetZoom":
+         resetZoom()
+@@ -163,7 +166,7 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
+     }
+   })()
+ 
+-  const wslServersApi = os === "windows" ? window.api.wslServers : undefined
++  const wslServersApi = !enterprise && os === "windows" ? window.api.wslServers : undefined
+ 
+   return {
+     platform: "desktop",
+@@ -209,6 +212,7 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
+     },
+ 
+     openExternal(url: string) {
++      if (enterprise) return
+       window.api.openExternal(url)
+     },
+     openLocalFile(url: string) {
+@@ -234,11 +238,13 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
+       getBlob: (id) => window.api.draftBlobGet(id).then((data) => data && new Blob([data])),
+     }),
+ 
+-    updater: {
+-      state: updaterState,
+-      check: () => window.api.updater.check(),
+-      install: () => window.api.updater.install(),
+-    },
++    updater: enterprise
++      ? undefined
++      : {
++          state: updaterState,
++          check: () => window.api.updater.check(),
++          install: () => window.api.updater.install(),
++        },
+ 
+     exportDebugLogs: () => window.api.exportDebugLogs(),
+ 
+@@ -257,7 +263,7 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
+ 
+       const notification = new Notification(title, {
+         body: description ?? "",
+-        icon: "https://opencode.ai/favicon-96x96-v3.png",
++        icon: enterprise ? "/favicon-96x96-v3.png" : "https://opencode.ai/favicon-96x96-v3.png",
+       })
+       notification.onclick = () => {
+         void window.api.showWindow()
+@@ -273,12 +279,14 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
+     },
+ 
+     getDefaultServer: async () => {
++      if (enterpriseDesktop) return ServerConnection.Key.make("sidecar")
+       const url = await window.api.getDefaultServerUrl().catch(() => null)
+       if (!url) return null
+       return ServerConnection.Key.make(url)
+     },
+ 
+     setDefaultServer: async (url: string | null) => {
++      if (enterprise) return
+       await window.api.setDefaultServerUrl(url)
+     },
+ 
+@@ -321,7 +329,7 @@ let menuTrigger = null as null | ((id: string) => void)
+ window.api.onMenuCommand((id) => {
+   menuTrigger?.(id)
+ })
+-listenForDeepLinks()
++if (!enterprise) listenForDeepLinks()
+ 
+ function LoadingSplash() {
+   return (
+@@ -394,11 +402,13 @@ function DesktopRoot(props: { windowState: DesktopWindowState }) {
+           },
+         })
+       }
+-      list.push(...readyWslConnections(wslServers.data, language.t("wsl.server.label")))
++      if (!enterprise) list.push(...readyWslConnections(wslServers.data, language.t("wsl.server.label")))
+       return list
+     })
+     const effectiveDefaultServer = createMemo(() =>
+-      ServerConnection.Key.make(availableStartupServer(defaultServer.latest, wslServers.data)),
++      ServerConnection.Key.make(
++        enterpriseDesktop ? "sidecar" : availableStartupServer(defaultServer.latest, wslServers.data),
++      ),
+     )
+     return (
+       <Show when={ready()} fallback={<LoadingSplash />}>
+diff --git a/packages/desktop/src/renderer/onboarding.tsx b/packages/desktop/src/renderer/onboarding.tsx
+index c5d7ff5..8469be8 100644
+--- a/packages/desktop/src/renderer/onboarding.tsx
++++ b/packages/desktop/src/renderer/onboarding.tsx
+@@ -1,4 +1,4 @@
+-import { ServerConnection, useServer, useSettings, useTabs } from "@opencode-ai/app"
++import { enterprise, ServerConnection, useServer, useSettings, useTabs } from "@opencode-ai/app"
+ import { onMount } from "solid-js"
+ 
+ export function DesktopFirstLaunchOnboarding(props: { initialUrl: string; onLoaded: () => void }) {
+@@ -7,6 +7,10 @@ export function DesktopFirstLaunchOnboarding(props: { initialUrl: string; onLoad
+   const tabs = useTabs()
+ 
+   onMount(() => {
++    if (enterprise) {
++      props.onLoaded()
++      return
++    }
+     void runFirstLaunchOnboarding().finally(props.onLoaded)
+   })
+ 
+diff --git a/packages/opencode/script/build-node.ts b/packages/opencode/script/build-node.ts
+index d33ba2e..ab8cac7 100755
+--- a/packages/opencode/script/build-node.ts
++++ b/packages/opencode/script/build-node.ts
+@@ -12,21 +12,23 @@ process.chdir(dir)
+ 
+ const generated = await import("./generate.ts")
+ 
+-await Bun.build({
++const result = await Bun.build({
+   target: "node",
+   entrypoints: ["./src/node.ts"],
+   outdir: "./dist/node",
+   format: "esm",
+-  sourcemap: "linked",
++  sourcemap: Script.channel === "enterprise" ? "none" : "linked",
+   external: ["jsonc-parser", "@lydell/node-pty"],
+   define: {
+     OPENCODE_MODELS_DEV: generated.modelsData,
+-    OPENCODE_VERSION: `'${Script.version}'`,
+-    OPENCODE_CHANNEL: `'${Script.channel}'`,
++    OPENCODE_VERSION: JSON.stringify(Script.version),
++    OPENCODE_CHANNEL: JSON.stringify(Script.channel),
+   },
+   files: {
+     "opencode-web-ui.gen.ts": "",
+   },
+ })
+ 
++if (!result.success) throw new AggregateError(result.logs, "Node server build failed")
++
+ console.log("Build complete")
+diff --git a/packages/opencode/src/cli/cmd/run.ts b/packages/opencode/src/cli/cmd/run.ts
+index cccc255..0ef023d 100644
+--- a/packages/opencode/src/cli/cmd/run.ts
++++ b/packages/opencode/src/cli/cmd/run.ts
+@@ -19,7 +19,8 @@ import { pathToFileURL } from "url"
+ import { open } from "node:fs/promises"
+ import { Effect } from "effect"
+ import { UI } from "../ui"
+-import { effectCmd } from "../effect-cmd"
++import { effectCmd, fail } from "../effect-cmd"
++import { Enterprise } from "@opencode-ai/core/enterprise/policy"
+ import { EOL } from "os"
+ import { Filesystem } from "@/util/filesystem"
+ import { createOpencodeClient, type OpencodeClient, type ToolPart } from "@opencode-ai/sdk/v2"
+@@ -189,6 +190,7 @@ export const RunCommand = effectCmd({
+       })
+       .option("attach", {
+         type: "string",
++        hidden: Enterprise.enabled,
+         describe: "attach to a running opencode server (e.g., http://localhost:4096)",
+       })
+       .option("password", {
+@@ -261,6 +263,9 @@ export const RunCommand = effectCmd({
+         describe: "enable direct interactive demo slash commands; pass one as the message to run it immediately",
+       }),
+   handler: Effect.fn("Cli.run")(function* (args) {
++    if (Enterprise.enabled && args.attach !== undefined) {
++      return yield* fail("Remote --attach is disabled by enterprise policy; use the local runtime")
++    }
+     const { Agent } = yield* Effect.promise(() => import("@/agent/agent"))
+     const { RuntimeFlags } = yield* Effect.promise(() => import("@/effect/runtime-flags"))
+     const { InstanceRef } = yield* Effect.promise(() => import("@/effect/instance-ref"))
+diff --git a/packages/opencode/src/cli/cmd/tui.ts b/packages/opencode/src/cli/cmd/tui.ts
+index 95ffac7..69c2001 100644
+--- a/packages/opencode/src/cli/cmd/tui.ts
++++ b/packages/opencode/src/cli/cmd/tui.ts
+@@ -6,12 +6,10 @@ import { fileURLToPath } from "url"
+ import { UI } from "@/cli/ui"
+ import { errorMessage } from "@opencode-ai/tui/util/error"
+ import { withTimeout } from "@/util/timeout"
+-import { withNetworkOptions, resolveNetworkOptionsNoConfig, hasArg } from "@/cli/network"
+ import { Filesystem } from "@/util/filesystem"
+ import type { GlobalEvent } from "@opencode-ai/sdk/v2"
+ import type { EventSource } from "@opencode-ai/tui/context/sdk"
+ import { writeHeapSnapshot } from "v8"
+-import { ServerAuth } from "@/server/auth"
+ import { validateSession } from "../tui/validate-session"
+ import { win32InstallCtrlCGuard } from "@opencode-ai/tui/terminal-win32"
+ 
+@@ -73,7 +71,7 @@ export const TuiThreadCommand = cmd({
+   command: "$0 [project]",
+   describe: "start opencode tui",
+   builder: (yargs) =>
+-    withNetworkOptions(yargs)
++    yargs
+       .positional("project", {
+         type: "string",
+         describe: "path to start opencode in",
+@@ -150,15 +148,6 @@ export const TuiThreadCommand = cmd({
+     const noReplay = args.replay === false || args.noReplay === true
+ 
+     if (args.mini) {
+-      const network = ["--port", "--hostname", "--mdns", "--no-mdns", "--mdns-domain", "--cors"].find((option) =>
+-        process.argv.some((arg) => arg === option || arg.startsWith(option + "=")),
+-      )
+-      if (network) {
+-        UI.error(`${network} cannot be used with --mini`)
+-        process.exitCode = 1
+-        return
+-      }
+-
+       const { runMini } = await import("./run")
+       await runMini({
+         directory: resolveThreadDirectory(args.project),
+@@ -230,23 +219,12 @@ export const TuiThreadCommand = cmd({
+       const prompt = await input(args.prompt)
+       const config = await TuiConfig.get()
+ 
+-      const network = resolveNetworkOptionsNoConfig(args)
+-      const external = hasArg("--port") || hasArg("--hostname") || network.mdns === true
+-
+-      const headers = external ? ServerAuth.headers() : undefined
+-
+-      const transport = external
+-        ? {
+-            url: (await client.call("server", network)).url,
+-            fetch: undefined,
+-            events: undefined,
+-            headers,
+-          }
+-        : {
+-            url: "http://opencode.internal",
+-            fetch: createWorkerFetch(client),
+-            events: createEventSource(client),
+-          }
++      // The enterprise TUI talks only to its private worker; it never opens a socket.
++      const transport = {
++        url: "http://opencode.internal",
++        fetch: createWorkerFetch(client),
++        events: createEventSource(client),
++      }
+ 
+       try {
+         await validateSession({
+@@ -254,7 +232,6 @@ export const TuiThreadCommand = cmd({
+           sessionID: args.session,
+           directory: cwd,
+           fetch: transport.fetch,
+-          headers,
+         })
+       } catch (error) {
+         UI.error(errorMessage(error))
+@@ -282,7 +259,6 @@ export const TuiThreadCommand = cmd({
+             pluginHost: createLegacyTuiPluginHost(),
+             directory: cwd,
+             fetch: transport.fetch,
+-            headers: transport.headers,
+             events: transport.events,
+             args: {
+               continue: args.continue,
+diff --git a/packages/opencode/src/cli/tui/worker.ts b/packages/opencode/src/cli/tui/worker.ts
+index 4cf6b2d..342e828 100644
+--- a/packages/opencode/src/cli/tui/worker.ts
++++ b/packages/opencode/src/cli/tui/worker.ts
+@@ -1,4 +1,5 @@
+ import { Server } from "@/server/server"
++import { Enterprise } from "@opencode-ai/core/enterprise/policy"
+ import { InstanceRuntime } from "@/project/instance-runtime"
+ import { Rpc } from "@/util/rpc"
+ import { upgrade } from "@/cli/upgrade"
+@@ -52,6 +53,7 @@ export const rpc = {
+     return result
+   },
+   async server(input: { port: number; hostname: string; mdns?: boolean; cors?: string[] }) {
++    if (Enterprise.enabled) throw new Error("Enterprise TUI network listeners are disabled")
+     if (server) await server.stop(true)
+     server = await Server.listen(input)
+     return { url: server.url.toString() }
+diff --git a/packages/opencode/src/node.ts b/packages/opencode/src/node.ts
+index 04cd95a..ef60980 100644
+--- a/packages/opencode/src/node.ts
++++ b/packages/opencode/src/node.ts
+@@ -1,4 +1,33 @@
++import { Enterprise } from "@opencode-ai/core/enterprise/policy"
++import { EnterpriseDesktop } from "./server/enterprise-desktop"
++
++// The native sidecar does not execute the CLI entrypoint. Validate the same
++// administrator-owned policy before exposing any listener or project service.
++Enterprise.read()
++
+ export { Config } from "@/config/config"
+-export { Server } from "./server/server"
+ export { bootstrap } from "./cli/bootstrap"
+ export { Database } from "@opencode-ai/core/database/database"
++export type Listener = import("./server/server").Server.Listener
++
++export async function listen(input: {
++  hostname: string
++  port: number
++  username: string
++  password: string
++  cors?: readonly string[]
++}) {
++  EnterpriseDesktop.validate(input)
++  if (process.env.OPENCODE_WORKSPACE_ID) throw new Error("ERR_ENTERPRISE_REMOTE_WORKSPACE")
++  delete process.env.OPENCODE_SERVER_PASSWORD
++  delete process.env.OPENCODE_SERVER_USERNAME
++  const { Server } = await import("./server/server")
++  return Server.listen({
++    hostname: "127.0.0.1",
++    port: input.port,
++    cors: ["oc://renderer"],
++    enterpriseDesktop: { username: input.username, password: input.password },
++  })
++}
++
++export * as Server from "./node"
+diff --git a/packages/opencode/src/server/enterprise-desktop.ts b/packages/opencode/src/server/enterprise-desktop.ts
+new file mode 100644
+index 0000000..845b9d0
+--- /dev/null
++++ b/packages/opencode/src/server/enterprise-desktop.ts
+@@ -0,0 +1,121 @@
++import { createHash, timingSafeEqual } from "node:crypto"
++import { Effect } from "effect"
++import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
++import { Enterprise } from "@opencode-ai/core/enterprise/policy"
++
++export type Credentials = { username: string; password: string }
++export function validate(input: Credentials & { hostname: string; port: number }) {
++  Enterprise.read()
++  if (
++    input.hostname !== "127.0.0.1" ||
++    !Number.isInteger(input.port) ||
++    input.port < 1 ||
++    input.port > 65535 ||
++    input.username !== "opencode" ||
++    input.password.length < 24
++  )
++    throw new Error("ERR_ENTERPRISE_DESKTOP_LISTENER")
++}
++
++function digest(value: string) {
++  return createHash("sha256").update(value).digest()
++}
++
++function blocked(path: string, method: string) {
++  if (method === "GET" && ["/experimental/session", "/experimental/worktree"].includes(path)) return false
++  if (/^\/(?:api|auth|sync|console|experimental|workspace)(?:\/|$)/.test(path)) return true
++  if (/^\/global\/(?:upgrade|dispose)$/.test(path)) return true
++  if (/^\/provider\/[^/]+\/(?:oauth|auth)/.test(path)) return true
++  if (/^\/session\/[^/]+\/share$/.test(path)) return true
++  if (
++    ["PATCH", "POST", "PUT", "DELETE"].includes(method) &&
++    /^\/(?:mcp|provider|config|global\/config)(?:\/|$)/.test(path)
++  )
++    return true
++  return false
++}
++
++export function middleware(credentials: Credentials, port: number) {
++  const authorization = digest(
++    `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")}`,
++  )
++  return <E, R>(effect: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>) =>
++    Effect.gen(function* () {
++      const request = yield* HttpServerRequest.HttpServerRequest
++      const url = new URL(request.url, `http://127.0.0.1:${port}`)
++      const pathname = url.pathname.toLowerCase()
++      const deny = (status = 403) => HttpServerResponse.jsonUnsafe({ error: "Enterprise desktop policy" }, { status })
++      if (request.headers.host !== `127.0.0.1:${port}`) return deny()
++      const origin = request.headers.origin
++      if (origin && origin !== "oc://renderer") return deny()
++      if (request.headers["sec-fetch-site"] === "cross-site" && origin !== "oc://renderer") return deny()
++      if (request.method === "OPTIONS") {
++        if (origin !== "oc://renderer") return deny()
++        return HttpServerResponse.empty({
++          status: 204,
++          headers: {
++            "access-control-allow-origin": "oc://renderer",
++            "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
++            "access-control-allow-headers": "authorization, content-type, x-opencode-directory, x-opencode-ticket",
++            vary: "Origin",
++          },
++        })
++      }
++      if (!timingSafeEqual(authorization, digest(request.headers.authorization ?? ""))) return deny(401)
++      if (
++        /[\\%;]/.test(url.pathname) ||
++        url.pathname.includes("//") ||
++        (url.pathname !== "/" && url.pathname.endsWith("/")) ||
++        url.searchParams.has("auth_token") ||
++        url.searchParams.has("workspace") ||
++        url.searchParams.has("workspaceID") ||
++        request.headers["x-opencode-workspace"] ||
++        blocked(pathname, request.method)
++      )
++        return deny()
++      if (request.method === "GET" && ["/mcp", "/provider/auth"].includes(pathname))
++        return HttpServerResponse.jsonUnsafe({})
++      if (request.method === "GET" && ["/lsp", "/formatter", "/skill"].includes(pathname))
++        return HttpServerResponse.jsonUnsafe([])
++      // Legacy API permits per-session permission/tool changes and model choice.
++      // The native client keeps ordinary sessions, but cannot loosen the compiled policy.
++      if (["POST", "PATCH"].includes(request.method) && /^\/session(?:\/|$)/.test(pathname)) {
++        const body = yield* request.text
++        const value: unknown = body
++          ? yield* Effect.try({ try: () => JSON.parse(body) as unknown, catch: () => undefined }).pipe(
++              Effect.orElseSucceed(() => undefined),
++            )
++          : {}
++        if (!value || typeof value !== "object" || Array.isArray(value)) return deny(400)
++        const payload = value as Record<string, unknown>
++        if (["permission", "permissions", "tools", "workspaceID"].some((key) => key in payload)) return deny()
++        const selected = payload.model
++        if (selected !== undefined) {
++          if (typeof selected === "string") {
++            if (!pathname.endsWith("/command") || selected !== `enterprise/${Enterprise.read().model}`) return deny()
++          } else {
++            if (!selected || typeof selected !== "object" || Array.isArray(selected)) return deny()
++            const model = selected as Record<string, unknown>
++            if (model.providerID !== "enterprise" || model.modelID !== Enterprise.read().model) return deny()
++          }
++        }
++        if (
++          payload.providerID !== undefined &&
++          (payload.providerID !== "enterprise" || payload.modelID !== Enterprise.read().model)
++        )
++          return deny()
++      }
++      const response = yield* effect
++      return HttpServerResponse.setHeader(response, "cache-control", "no-store")
++    }).pipe(
++      Effect.map((response) =>
++        HttpServerResponse.setHeaders(response, {
++          "access-control-allow-origin": "oc://renderer",
++          vary: "Origin",
++          "cache-control": "no-store",
++        }),
++      ),
++    )
++}
++
++export * as EnterpriseDesktop from "./enterprise-desktop"
+diff --git a/packages/opencode/src/server/routes/instance/httpapi/middleware/workspace-routing.ts b/packages/opencode/src/server/routes/instance/httpapi/middleware/workspace-routing.ts
+index 873abd8..f571093 100644
+--- a/packages/opencode/src/server/routes/instance/httpapi/middleware/workspace-routing.ts
++++ b/packages/opencode/src/server/routes/instance/httpapi/middleware/workspace-routing.ts
+@@ -1,3 +1,4 @@
++import { Enterprise } from "@opencode-ai/core/enterprise/policy"
+ import { WorkspaceV2 } from "@opencode-ai/core/workspace"
+ import type { Target } from "@/control-plane/types"
+ import { Workspace } from "@/control-plane/workspace"
+@@ -229,6 +230,15 @@ function routeHttpApiWorkspace<E>(
+           Effect.catchDefect(() => Effect.succeed(undefined)),
+         )
+       : undefined
++    if (
++      Enterprise.enabled &&
++      (session?.workspaceID || configuredWorkspaceID() || requestURL(request).searchParams.has("workspace"))
++    ) {
++      return HttpServerResponse.jsonUnsafe(
++        { error: "Remote workspaces are disabled by enterprise policy" },
++        { status: 403 },
++      )
++    }
+     const plan = yield* planRequest(request, session)
+     return yield* routeWorkspace(client, effect, plan)
+   })
+diff --git a/packages/opencode/src/server/server.ts b/packages/opencode/src/server/server.ts
+index 440b992..ffa0d7e 100644
+--- a/packages/opencode/src/server/server.ts
++++ b/packages/opencode/src/server/server.ts
+@@ -1,4 +1,6 @@
+ import "./init-projectors"
++import { EnterpriseDesktop } from "./enterprise-desktop"
++import { Enterprise } from "@opencode-ai/core/enterprise/policy"
+ 
+ import { NodeHttpServer } from "@effect/platform-node"
+ import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
+@@ -34,6 +36,7 @@ type ListenOptions = CorsOptions & {
+   hostname: string
+   mdns?: boolean
+   mdnsDomain?: string
++  enterpriseDesktop?: EnterpriseDesktop.Credentials
+ }
+ type ListenerState = {
+   scope: Scope.Scope
+@@ -71,6 +74,10 @@ export async function openapi() {
+ export let url: URL | undefined
+ 
+ export async function listen(opts: ListenOptions): Promise<Listener> {
++  if (Enterprise.enabled) {
++    if (!opts.enterpriseDesktop) throw new Error("ERR_ENTERPRISE_LISTENER_DISABLED")
++    EnterpriseDesktop.validate({ ...opts.enterpriseDesktop, hostname: opts.hostname, port: opts.port })
++  }
+   const listener = await Effect.runPromise(listenEffect(opts))
+   return {
+     hostname: listener.hostname,
+@@ -99,7 +106,9 @@ const listenEffect: (opts: ListenOptions) => Effect.Effect<EffectListener, unkno
+ 
+ function listenerLayer(opts: ListenOptions, port: number) {
+   return HttpRouter.serve(HttpApiApp.createRoutes(opts), {
+-    middleware: disposeMiddleware,
++    middleware: opts.enterpriseDesktop
++      ? (effect) => EnterpriseDesktop.middleware(opts.enterpriseDesktop!, port)(disposeMiddleware(effect))
++      : disposeMiddleware,
+     disableLogger: true,
+     disableListenLog: true,
+   }).pipe(
+@@ -110,7 +119,23 @@ function listenerLayer(opts: ListenOptions, port: number) {
+     // `ConfigProvider` snapshots `process.env` on first read and caches the
+     // result on a module-singleton Reference; without overriding it here,
+     // every later `Server.listen()` keeps observing that initial snapshot.
+-    Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnv())),
++    Layer.provide(
++      ConfigProvider.layer(
++        ConfigProvider.fromEnv(
++          opts.enterpriseDesktop
++            ? {
++                env: {
++                  ...Object.fromEntries(
++                    Object.entries(process.env).flatMap(([key, value]) => (value === undefined ? [] : [[key, value]])),
++                  ),
++                  OPENCODE_SERVER_USERNAME: opts.enterpriseDesktop.username,
++                  OPENCODE_SERVER_PASSWORD: opts.enterpriseDesktop.password,
++                },
++              }
++            : undefined,
++        ),
++      ),
++    ),
+   )
+ }
+ 
+diff --git a/packages/opencode/src/server/shared/ui.ts b/packages/opencode/src/server/shared/ui.ts
+index d3f2c45..c869b97 100644
+--- a/packages/opencode/src/server/shared/ui.ts
++++ b/packages/opencode/src/server/shared/ui.ts
+@@ -1,3 +1,4 @@
++import { Enterprise } from "@opencode-ai/core/enterprise/policy"
+ import { FSUtil } from "@opencode-ai/core/fs-util"
+ import { Effect, Stream } from "effect"
+ import { HttpBody, HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+@@ -84,6 +85,7 @@ export function serveUIEffect(
+     const path = new URL(request.url, "http://localhost").pathname
+ 
+     if (embeddedWebUI) return yield* serveEmbeddedUIEffect(path, services.fs, embeddedWebUI)
++    if (Enterprise.enabled) return notFound()
+ 
+     const response = yield* services.client.execute(
+       HttpClientRequest.make(request.method)(upstreamURL(path), {
+diff --git a/packages/opencode/src/session/llm.ts b/packages/opencode/src/session/llm.ts
+index a99f8ac..0ead7ee 100644
+--- a/packages/opencode/src/session/llm.ts
++++ b/packages/opencode/src/session/llm.ts
+@@ -1,4 +1,5 @@
+ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
++import { Enterprise } from "@opencode-ai/core/enterprise/policy"
+ import { llmClient } from "@opencode-ai/core/effect/app-node-platform"
+ import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+ import { Provider } from "@/provider/provider"
+@@ -278,6 +279,14 @@ const live: Layer.Layer<
+       return {
+         type: "ai-sdk" as const,
+         result: streamText({
++          // Also cover persisted history and part edits: SDK downloads happen
++          // before wrapLanguageModel and bypass the enterprise model transport.
++          experimental_download: Enterprise.enabled
++            ? async (requests) => {
++                if (requests.length) throw new Error("Enterprise policy denies remote attachment downloads")
++                return []
++              }
++            : undefined,
+           onError(error) {
+             bridge.fork(
+               Effect.logError("stream error", {
+diff --git a/packages/opencode/src/session/prompt.ts b/packages/opencode/src/session/prompt.ts
+index 0f85d44..63cde1d 100644
+--- a/packages/opencode/src/session/prompt.ts
++++ b/packages/opencode/src/session/prompt.ts
+@@ -1,4 +1,5 @@
+ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
++import { Enterprise } from "@opencode-ai/core/enterprise/policy"
+ import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+ import path from "path"
+ import { SessionV1 } from "@opencode-ai/core/v1/session"
+@@ -633,6 +634,30 @@ const layer = Layer.effect(
+     })
+ 
+     const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(function* (input: PromptInput) {
++      // Validate the entire request before resolving resources, reading files or
++      // persisting parts. AI SDK can download remote file URLs before transport
++      // middleware runs, so network policy cannot be delegated to that layer.
++      if (Enterprise.enabled) {
++        for (const part of input.parts) {
++          if (part.type !== "file") continue
++          if (part.source?.type === "resource") {
++            throw new Error("Enterprise policy denies remote resource attachments")
++          }
++          const url = new URL(part.url)
++          const text = part.mime === "text/plain"
++          if (url.protocol === "data:" && text && /^data:text\/plain(?:;[^,]*)?,/i.test(part.url)) continue
++          if (
++            url.protocol === "file:" &&
++            !url.hostname &&
++            !url.username &&
++            !url.password &&
++            !decodeURIComponent(url.pathname).replaceAll("\\", "/").startsWith("//") &&
++            (text || part.mime === "application/x-directory")
++          )
++            continue
++          throw new Error("Enterprise policy permits only local text file attachments")
++        }
++      }
+       const agentName = input.agent
+       const ag = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
+       if (!ag) {
+diff --git a/packages/opencode/test/enterprise/fixtures/tui-network-worker.ts b/packages/opencode/test/enterprise/fixtures/tui-network-worker.ts
+new file mode 100644
+index 0000000..cac0be9
+--- /dev/null
++++ b/packages/opencode/test/enterprise/fixtures/tui-network-worker.ts
+@@ -0,0 +1,9 @@
++import { rpc } from "../../../src/cli/tui/worker"
++
++const health = await rpc.fetch({ url: "http://opencode.internal/global/health", method: "GET", headers: {} })
++const error = await rpc.server({ hostname: "0.0.0.0", port: 0, mdns: true }).then(
++  () => "listener unexpectedly started",
++  (error: unknown) => String(error),
++)
++await rpc.shutdown()
++postMessage({ status: health.status, error })
+diff --git a/packages/opencode/test/enterprise/remote-input.test.ts b/packages/opencode/test/enterprise/remote-input.test.ts
+new file mode 100644
+index 0000000..613d48a
+--- /dev/null
++++ b/packages/opencode/test/enterprise/remote-input.test.ts
+@@ -0,0 +1,162 @@
++import { describe, expect, spyOn } from "bun:test"
++import { Cause, Effect, Exit, Layer, Stream } from "effect"
++import path from "node:path"
++import { pathToFileURL } from "node:url"
++import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
++import { LayerNode } from "@opencode-ai/core/effect/layer-node"
++import { SessionProjector } from "@opencode-ai/core/session/projector"
++import { Agent } from "@/agent/agent"
++import { Provider } from "@/provider/provider"
++import { LLM } from "@/session/llm"
++import { SessionPrompt } from "@/session/prompt"
++import { Session } from "@/session/session"
++import { TestInstance, testInstanceStoreLayer } from "../fixture/fixture"
++import { testEffect } from "../lib/effect"
++
++// Real prompt persistence and AI SDK conversion, with no model server required.
++// The administrator-owned policy is installed by the enterprise CI fixture.
++const it = testEffect(
++  Layer.mergeAll(
++    AppNodeBuilder.build(
++      LayerNode.group([SessionPrompt.node, Session.node, SessionProjector.node, Provider.node, Agent.node, LLM.node]),
++    ),
++    testInstanceStoreLayer,
++  ),
++)
++
++describe("enterprise attachment egress", () => {
++  it.instance("rejects remote attachments before saving the user message", () =>
++    Effect.gen(function* () {
++      const prompt = yield* SessionPrompt.Service
++      const sessions = yield* Session.Service
++      const session = yield* sessions.create({ title: "Attachment boundary" })
++      for (const url of [
++        "https://attacker.invalid/document.txt",
++        "http://169.254.169.254/latest/meta-data/",
++        "http://127.0.0.1:1234/private",
++        "file://remote-host/share/document.txt",
++        "file:////remote-host/share/document.txt",
++        "file:///%5c%5cremote-host/share/document.txt",
++        "data:application/octet-stream;base64,aGVsbG8=",
++      ]) {
++        const exit = yield* prompt
++          .prompt({
++            sessionID: session.id,
++            noReply: true,
++            parts: [{ type: "file", mime: "text/plain", url }],
++          })
++          .pipe(Effect.exit)
++        expect(Exit.isFailure(exit)).toBe(true)
++        if (Exit.isFailure(exit)) expect(String(Cause.squash(exit.cause))).toContain("Enterprise policy")
++      }
++      const resource = yield* prompt
++        .prompt({
++          sessionID: session.id,
++          noReply: true,
++          parts: [
++            {
++              type: "file",
++              mime: "text/plain",
++              url: "data:text/plain,placeholder",
++              source: {
++                type: "resource",
++                clientName: "remote",
++                uri: "https://attacker.invalid/resource",
++                text: { value: "resource", start: 0, end: 8 },
++              },
++            },
++          ],
++        })
++        .pipe(Effect.exit)
++      expect(Exit.isFailure(resource)).toBe(true)
++      if (Exit.isFailure(resource))
++        expect(String(Cause.squash(resource.cause))).toContain("remote resource attachments")
++      expect(yield* sessions.messages({ sessionID: session.id })).toHaveLength(0)
++    }),
++  )
++
++  it.instance("preserves developer-selected local text and inline text attachments", () =>
++    Effect.gen(function* () {
++      const instance = yield* TestInstance
++      const prompt = yield* SessionPrompt.Service
++      const sessions = yield* Session.Service
++      const session = yield* sessions.create({ title: "Local attachments" })
++      const file = path.join(instance.directory, "notes.txt")
++      yield* Effect.promise(() => Bun.write(file, "local enterprise source"))
++      const message = yield* prompt.prompt({
++        sessionID: session.id,
++        noReply: true,
++        parts: [
++          { type: "file", mime: "text/plain", filename: "notes.txt", url: pathToFileURL(file).href },
++          {
++            type: "file",
++            mime: "text/plain",
++            filename: "inline.txt",
++            url: "data:text/plain;base64,aW5saW5lIGVudGVycHJpc2Ugc291cmNl",
++          },
++        ],
++      })
++      const text = message.parts
++        .filter((part) => part.type === "text")
++        .map((part) => part.text)
++        .join("\n")
++      expect(text).toContain("local enterprise source")
++      expect(text).toContain("inline enterprise source")
++    }),
++  )
++
++  it.instance("real LLM SDK rejects historical remote URLs before its global fetch", () =>
++    Effect.gen(function* () {
++      const prompt = yield* SessionPrompt.Service
++      const sessions = yield* Session.Service
++      const provider = yield* Provider.Service
++      const agents = yield* Agent.Service
++      const llm = yield* LLM.Service
++      const session = yield* sessions.create({ title: "Historical attachment" })
++      const message = yield* prompt.prompt({
++        sessionID: session.id,
++        noReply: true,
++        parts: [{ type: "text", text: "Read the historical attachment" }],
++      })
++      if (message.info.role !== "user") throw new Error("Expected user message")
++      const model = yield* provider.getModel(message.info.model.providerID, message.info.model.modelID)
++      const agent = yield* agents.defaultInfo()
++      const fetch = yield* Effect.acquireRelease(
++        Effect.sync(() =>
++          spyOn(globalThis, "fetch").mockImplementation(
++            Object.assign(
++              async () => {
++                throw new Error("unexpected SDK attachment network request")
++              },
++              { preconnect: globalThis.fetch.preconnect },
++            ),
++          ),
++        ),
++        (fetch) => Effect.sync(() => fetch.mockRestore()),
++      )
++      for (const mime of ["application/octet-stream", "application/pdf", "image/png"]) {
++        const exit = yield* llm
++          .stream({
++            user: message.info,
++            sessionID: session.id,
++            model,
++            agent,
++            system: [],
++            tools: {},
++            retries: 0,
++            messages: [
++              {
++                role: "user",
++                content: [{ type: "file", data: new URL("https://attacker.invalid/history"), mediaType: mime }],
++              },
++            ],
++          })
++          .pipe(Stream.runDrain, Effect.exit)
++        expect(Exit.isFailure(exit)).toBe(true)
++        if (Exit.isFailure(exit))
++          expect(String(Cause.squash(exit.cause))).toContain("Enterprise policy denies remote attachment downloads")
++      }
++      expect(fetch).not.toHaveBeenCalled()
++    }),
++  )
++})
+diff --git a/packages/opencode/test/enterprise/tui-network.test.ts b/packages/opencode/test/enterprise/tui-network.test.ts
+new file mode 100644
+index 0000000..7cccd3f
+--- /dev/null
++++ b/packages/opencode/test/enterprise/tui-network.test.ts
+@@ -0,0 +1,94 @@
++import { describe, expect, test } from "bun:test"
++import { fileURLToPath } from "node:url"
++import yargs from "yargs"
++import { TuiThreadCommand } from "../../src/cli/cmd/tui"
++
++describe("enterprise console transport", () => {
++  test("TUI parser rejects every public-listener spelling before its handler", async () => {
++    const cases = [
++      ["--port", "4096"],
++      ["--port=4096"],
++      ["--hostname", "0.0.0.0"],
++      ["--hostname=0.0.0.0"],
++      ["--mdns"],
++      ["--no-mdns"],
++      ["--mdns=false"],
++      ["--mdns-domain", "remote.local"],
++      ["--mdnsDomain=remote.local"],
++      ["--cors", "https://untrusted.example"],
++      ["--mini", "--port=4096"],
++    ]
++    for (const input of cases) {
++      let invoked = false
++      const parser = yargs([])
++        .command({
++          ...TuiThreadCommand,
++          handler: () => {
++            invoked = true
++          },
++        })
++        .strict()
++        .exitProcess(false)
++        .fail((message, error) => {
++          throw error ?? new Error(message)
++        })
++      await expect(Promise.resolve().then(() => parser.parseAsync(input))).rejects.toThrow("Unknown argument")
++      expect(invoked).toBe(false)
++    }
++  })
++
++  test("normal TUI worker serves its internal API but cannot open a network listener", async () => {
++    const worker = new Worker(new URL("./fixtures/tui-network-worker.ts", import.meta.url).href)
++    try {
++      const result = await new Promise<{ status: number; error: string }>((resolve, reject) => {
++        worker.onmessage = (event) => resolve(event.data)
++        worker.onerror = (event) => reject(new Error(event.message))
++      })
++      expect(result.status).toBe(200)
++      expect(result.error).toContain("Enterprise TUI network listeners are disabled")
++    } finally {
++      worker.terminate()
++    }
++  }, 30000)
++
++  test("run --attach is denied before any request reaches the remote server", async () => {
++    let requests = 0
++    const server = Bun.serve({
++      hostname: "127.0.0.1",
++      port: 0,
++      fetch() {
++        requests++
++        return Response.json({ healthy: true, version: "untrusted" })
++      },
++    })
++    try {
++      const child = Bun.spawn(
++        [
++          process.execPath,
++          fileURLToPath(new URL("../../src/index.ts", import.meta.url)),
++          "run",
++          "--attach",
++          server.url.toString(),
++          "--model",
++          "openai/cloud-model",
++          "private prompt",
++        ],
++        {
++          stdin: "ignore",
++          stdout: "pipe",
++          stderr: "pipe",
++        },
++      )
++      const [exit, out, err] = await Promise.all([
++        child.exited,
++        new Response(child.stdout).text(),
++        new Response(child.stderr).text(),
++      ])
++      expect(exit).not.toBe(0)
++      expect(out + err).toContain("Remote --attach is disabled by enterprise policy")
++      expect(requests).toBe(0)
++    } finally {
++      server.stop(true)
++    }
++  }, 30000)
++})
+diff --git a/packages/opencode/test/server/enterprise-desktop.test.ts b/packages/opencode/test/server/enterprise-desktop.test.ts
+new file mode 100644
+index 0000000..15ce86d
+--- /dev/null
++++ b/packages/opencode/test/server/enterprise-desktop.test.ts
+@@ -0,0 +1,103 @@
++import { describe, expect, test } from "bun:test"
++import { Effect } from "effect"
++import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
++import { EnterpriseDesktop } from "../../src/server/enterprise-desktop"
++
++const credentials = { username: "opencode", password: "desktop-random-credential-at-least-24" }
++const authorization = `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")}`
++const boundary = EnterpriseDesktop.middleware(credentials, 49165)
++const endpoint = Effect.gen(function* () {
++  const request = yield* HttpServerRequest.HttpServerRequest
++  return HttpServerResponse.text(request.method === "POST" ? yield* request.text : "ok")
++})
++async function call(path: string, init: RequestInit = {}) {
++  const request = new Request(`http://127.0.0.1:49165${path}`, {
++    ...init,
++    headers: { host: "127.0.0.1:49165", authorization, ...Object.fromEntries(new Headers(init.headers)) },
++  })
++  return Effect.runPromise(
++    boundary(endpoint).pipe(
++      Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
++    ),
++  )
++}
++
++describe("native desktop sidecar middleware", () => {
++  test("authenticates API, events, UI assets and PTY tickets", async () => {
++    for (const path of [
++      "/provider",
++      "/global/health",
++      "/event",
++      "/global/event",
++      "/site.webmanifest",
++      "/pty/id/connect?ticket=x",
++    ]) {
++      expect((await call(path, { headers: { authorization: "" } })).status).toBe(401)
++    }
++  })
++  test("rejects foreign origins/hosts and credential query strings", async () => {
++    expect((await call("/provider", { headers: { origin: "https://attacker.invalid" } })).status).toBe(403)
++    expect((await call("/provider", { headers: { host: "attacker.invalid" } })).status).toBe(403)
++    expect((await call("/provider?auth_token=x")).status).toBe(403)
++    expect((await call("/provider", { headers: { origin: "oc://renderer" } })).status).toBe(200)
++    expect((await call("/mcp", { headers: { origin: "oc://renderer" } })).headers["access-control-allow-origin"]).toBe(
++      "oc://renderer",
++    )
++  })
++  test("blocks remote/control/config/cloud routes before handlers", async () => {
++    for (const [path, method] of [
++      ["/api/session", "GET"],
++      ["/experimental/console", "GET"],
++      ["/sync", "POST"],
++      ["/global/upgrade", "POST"],
++      ["/mcp", "POST"],
++      ["/config", "PATCH"],
++      ["/auth/openai", "PUT"],
++      ["/provider/openai/oauth/authorize", "POST"],
++      ["/session?workspace=remote", "GET"],
++    ]) {
++      expect((await call(path!, { method })).status).toBe(403)
++    }
++  })
++  test("rejects router normalization aliases before dispatch", async () => {
++    for (const route of ["/global/upgrade/", "/GLOBAL/upgrade", "/global/upgrade;a=b", "/MCP", "/api/session/"]) {
++      expect((await call(route, { method: "POST", body: "{}" })).status).toBe(403)
++    }
++    expect(
++      (await call("/Session/ses_a/message", { method: "POST", body: JSON.stringify({ tools: { bash: true } }) }))
++        .status,
++    ).toBe(403)
++    expect((await call("/experimental/session")).status).toBe(200)
++    expect((await call("/experimental/worktree")).status).toBe(200)
++  })
++  test("blocks session policy/tool/model overrides but preserves POST body for API parsing", async () => {
++    for (const value of [
++      { permission: [] },
++      { tools: { bash: true } },
++      { workspaceID: "remote" },
++      { model: { providerID: "openai", modelID: "gpt-4o" } },
++    ]) {
++      expect((await call("/session/ses_a/message", { method: "POST", body: JSON.stringify(value) })).status).toBe(403)
++    }
++    const response = await call("/session", {
++      method: "POST",
++      headers: { origin: "oc://renderer", "content-type": "application/json" },
++      body: '{"title":"Native workspace"}',
++    })
++    expect(response.status).toBe(200)
++    expect(await HttpServerResponse.toWeb(response).text()).toBe('{"title":"Native workspace"}')
++  })
++  test("only bundled renderer can preflight without credentials", async () => {
++    expect(
++      (await call("/session", { method: "OPTIONS", headers: { authorization: "", origin: "oc://renderer" } })).status,
++    ).toBe(204)
++    expect(
++      (
++        await call("/session", {
++          method: "OPTIONS",
++          headers: { authorization: "", origin: "https://attacker.invalid" },
++        })
++      ).status,
++    ).toBe(403)
++  })
++})
+-- 
+2.51.1
+

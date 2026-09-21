@@ -25,9 +25,10 @@ See [public/community engineering](../community/DEVELOPMENT-MODEL.md) and
 
 | Area | Current implementation boundary |
 |---|---|
-| Four patch files on exact v1.18.29 baseline | Implemented; application and matching source tree verified |
+| Numbered patch series on exact v1.18.29 baseline | Includes Windows policy, execution-permission and inference-deadline hardening; use the exact series/commit in the build manifest |
 | Directed regression tests, typechecks, Linux x64 build and smoke checks | Implemented; enterprise workflow previously passed |
-| Packaging, manifest and SHA-256 checks | Implemented |
+| Native Windows x64 Electron desktop | Installer and full portable application profile; use the successful native build/smoke run as evidence; customer acceptance pending |
+| Packaging, manifest and SHA-256 checks | Separate console/desktop assets and exact source identity; unsigned public CI candidates |
 | Public upstream maintenance | Candidate applicability checker and extensible numbered series implemented; scheduler activates after merge to the default branch |
 | Tag-triggered GitHub prerelease job | Configured; actual tag publication not yet verified |
 | Kubernetes runtime / Dockerfile | Executable profile validation, verified binary image context and restricted per-workspace manifests in the MVP toolkit; customer deployment remains unverified |
@@ -47,8 +48,10 @@ Use the current Actions run for actual pipeline status.
 
 Start with one customer, one project/toolchain, one fixed inference model, Linux x64
 remote workspaces, and a small named cohort (suggested 3–5 developers).
-Use the customer's existing access platform where available. Avoid selling native
-desktop coverage, arbitrary plugins, multiple models or unattended production changes
-as part of this first profile.
+Use the customer's existing access platform where available. A managed Windows
+workstation/VDI pilot can instead use the [native desktop candidate](DESKTOP.md)
+or Windows TUI, with its own standard-user and endpoint acceptance. Linux/macOS
+desktop support, arbitrary plugins, multiple models and unattended production
+changes are outside these candidate profiles.
 
 See [enterprise offering](../ENTERPRISE.md) and [licensing boundaries](../LICENSING.md).

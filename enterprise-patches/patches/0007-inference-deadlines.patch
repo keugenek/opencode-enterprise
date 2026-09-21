@@ -1,0 +1,588 @@
+From 6386dde3aef7c41e36bac969a162f30dd2d1dc09 Mon Sep 17 00:00:00 2001
+From: Enterprise CI <ci@localhost>
+Date: Mon, 21 Sep 2026 12:35:39 +0200
+Subject: [PATCH] fix(enterprise): bound inference transport and cancel stalled
+ streams
+
+---
+ .../core/src/enterprise/inference-deadline.ts | 168 +++++++++
+ packages/core/src/enterprise/transport.ts     |  28 +-
+ .../enterprise/transport-deadlines.test.ts    | 342 ++++++++++++++++++
+ 3 files changed, 526 insertions(+), 12 deletions(-)
+ create mode 100644 packages/core/src/enterprise/inference-deadline.ts
+ create mode 100644 packages/core/test/enterprise/transport-deadlines.test.ts
+
+diff --git a/packages/core/src/enterprise/inference-deadline.ts b/packages/core/src/enterprise/inference-deadline.ts
+new file mode 100644
+index 0000000..eeb2b42
+--- /dev/null
++++ b/packages/core/src/enterprise/inference-deadline.ts
+@@ -0,0 +1,168 @@
++// Compiled defaults: untrusted project config and environment cannot extend these limits.
++type Limits = { headers: number; first: number; idle: number; total: number }
++const defaults: Readonly<Limits> = Object.freeze({ headers: 30_000, first: 120_000, idle: 60_000, total: 600_000 })
++type Send = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
++
++/** Dependency injection is for tests; the enterprise transport always uses the compiled defaults. */
++export function create(send: Send, limits: Limits = defaults) {
++  return async (input: string | URL | Request, init: RequestInit, streaming: boolean) => {
++    const abort = new AbortController()
++    const state = {
++      finished: false,
++      progress: false,
++      reader: undefined as Pick<ReadableStreamDefaultReader<Uint8Array>, "read" | "cancel" | "releaseLock"> | undefined,
++      body: undefined as ReadableStreamDefaultController<Uint8Array> | undefined,
++      headers: undefined as ReturnType<typeof setTimeout> | undefined,
++      first: undefined as ReturnType<typeof setTimeout> | undefined,
++      idle: undefined as ReturnType<typeof setTimeout> | undefined,
++      total: undefined as ReturnType<typeof setTimeout> | undefined,
++    }
++    const failure = Promise.withResolvers<never>()
++    // A deadline may fire between pulls, when nobody is awaiting the rejection yet.
++    void failure.promise.catch(() => {})
++    const signal = init.signal ?? (input instanceof Request ? input.signal : undefined)
++    const onAbort = () => stop(signal?.reason ?? new DOMException("Inference cancelled", "AbortError"))
++    const cleanup = () => {
++      clearTimeout(state.headers)
++      clearTimeout(state.first)
++      clearTimeout(state.idle)
++      clearTimeout(state.total)
++      signal?.removeEventListener("abort", onAbort)
++    }
++    const stop = (reason: unknown) => {
++      if (state.finished) return
++      state.finished = true
++      cleanup()
++      abort.abort(reason)
++      failure.reject(reason)
++      state.body?.error(reason)
++      // Never await cancellation: a broken stream must not defeat the deadline itself.
++      if (state.reader) {
++        void state.reader.cancel(reason).catch(() => {})
++        state.reader.releaseLock()
++        state.reader = undefined
++      }
++    }
++    const deadline = (stage: keyof Limits) =>
++      setTimeout(
++        () => stop(new DOMException(`Enterprise inference ${stage} deadline exceeded`, "TimeoutError")),
++        limits[stage],
++      )
++    const progress = () => {
++      state.progress = true
++      clearTimeout(state.first)
++      clearTimeout(state.idle)
++      state.idle = deadline("idle")
++    }
++    signal?.addEventListener("abort", onAbort, { once: true })
++    if (signal?.aborted) {
++      onAbort()
++      throw signal.reason
++    }
++    state.headers = deadline("headers")
++    state.total = deadline("total")
++    try {
++      const pending = send(input, { ...init, signal: abort.signal }).then((response) => {
++        // Also release a late response from a non-cooperative fetch implementation.
++        if (state.finished) void response.body?.cancel(abort.signal.reason).catch(() => {})
++        return response
++      })
++      const response = await Promise.race([pending, failure.promise])
++      clearTimeout(state.headers)
++      state.reader = response.body?.getReader()
++      if (response.status >= 300 && response.status < 400) throw new Error("Enterprise transport rejects redirects")
++      if (response.ok) {
++        const type = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase()
++        if (type !== (streaming ? "text/event-stream" : "application/json"))
++          throw new Error("Enterprise inference returned a missing or unexpected Content-Type")
++        if (!state.reader) throw new Error("Enterprise inference returned an empty response body")
++      }
++      if (!state.reader) {
++        state.finished = true
++        cleanup()
++        return response
++      }
++      const reader = state.reader
++      const observe = streaming && response.ok ? eventProgress(progress) : progress
++      state.first = deadline("first")
++      const body = new ReadableStream<Uint8Array>({
++        start(controller) {
++          state.body = controller
++        },
++        async pull(controller) {
++          try {
++            const chunk = await Promise.race([reader.read(), failure.promise])
++            if (state.finished) return
++            if (chunk.done) {
++              if (response.ok && !state.progress) throw new Error("Enterprise inference ended before model output")
++              state.finished = true
++              cleanup()
++              reader.releaseLock()
++              controller.close()
++              return
++            }
++            if (chunk.value.byteLength) observe(chunk.value)
++            controller.enqueue(chunk.value)
++          } catch (error) {
++            stop(error)
++          }
++        },
++        cancel(reason) {
++          stop(reason ?? new DOMException("Inference response cancelled", "AbortError"))
++        },
++      })
++      return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers })
++    } catch (error) {
++      stop(error)
++      throw error
++    }
++  }
++}
++
++// Keepalives and role-only deltas must not extend time-to-first-token or idle deadlines.
++function eventProgress(progress: () => void) {
++  const decoder = new TextDecoder()
++  const state = { buffer: "", data: "" }
++  return (chunk: Uint8Array) => {
++    state.buffer += decoder.decode(chunk, { stream: true })
++    if (state.buffer.length + state.data.length > 1024 * 1024)
++      throw new Error("Enterprise inference SSE event exceeds 1 MiB")
++    const lines = state.buffer.split(/\r\n|\r(?!$)|\n/)
++    state.buffer = lines.pop() ?? ""
++    for (const line of lines) {
++      if (line.startsWith("data:")) state.data += `${line.slice(5).trimStart()}\n`
++      if (line !== "") continue
++      const data = state.data.trim()
++      state.data = ""
++      if (!data) continue
++      if (data === "[DONE]") {
++        progress()
++        continue
++      }
++      // The SDK owns protocol validation. This observer only recognizes model progress.
++      const value: unknown = JSON.parse(data)
++      if (!value || typeof value !== "object") continue
++      if ("error" in value) {
++        progress()
++        continue
++      }
++      if (!("choices" in value) || !Array.isArray(value.choices)) continue
++      if (
++        value.choices.some((choice: unknown) => {
++          if (!choice || typeof choice !== "object") return false
++          if ("finish_reason" in choice && choice.finish_reason != null) return true
++          if (!("delta" in choice) || !choice.delta || typeof choice.delta !== "object") return false
++          return Object.entries(choice.delta).some(
++            ([key, value]) =>
++              key !== "role" && value != null && value !== "" && (!Array.isArray(value) || value.length > 0),
++          )
++        })
++      )
++        progress()
++    }
++  }
++}
++
++// Resolve fetch when sending, so the runtime's standard TLS trust and proxy policy apply.
++export const fetch = create((input, init) => globalThis.fetch(input, init))
++export * as InferenceDeadline from "./inference-deadline"
+diff --git a/packages/core/src/enterprise/transport.ts b/packages/core/src/enterprise/transport.ts
+index 07dbb70..bad41bb 100644
+--- a/packages/core/src/enterprise/transport.ts
++++ b/packages/core/src/enterprise/transport.ts
+@@ -1,4 +1,5 @@
+-import { Enterprise } from "./policy"
++import type { Enterprise } from "./policy"
++import { InferenceDeadline } from "./inference-deadline"
+ 
+ export function validate(policy: Enterprise.Document, input: string | URL | Request, init?: RequestInit) {
+   const url = new URL(input instanceof Request ? input.url : input)
+@@ -20,23 +21,26 @@ export function validate(policy: Enterprise.Document, input: string | URL | Requ
+     }
+   }
+   if ("messages" in body) inspect(body.messages)
++  return body
+ }
+ 
+ export function create(policy: Enterprise.Document) {
+   const send = async (input: string | URL | Request, init?: RequestInit) => {
+-    validate(policy, input, init)
++    const body = validate(policy, input, init)
+     // The gateway authenticates the workload (e.g. service-mesh mTLS). No personal/cloud credentials.
+     // Do not forward SDK/user cookies, authorization, proxy options, or caller TLS overrides.
+-    const response = await fetch(input, {
+-      method: "POST",
+-      body: init?.body,
+-      signal: init?.signal,
+-      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+-      redirect: "error",
+-      credentials: "omit",
+-    })
+-    if (response.status >= 300 && response.status < 400) throw new Error("Enterprise transport rejects redirects")
+-    return response
++    return InferenceDeadline.fetch(
++      input,
++      {
++        method: "POST",
++        body: init?.body,
++        signal: init?.signal,
++        headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
++        redirect: "error",
++        credentials: "omit",
++      },
++      "stream" in body && body.stream === true,
++    )
+   }
+   return Object.assign(send, { preconnect: () => {} })
+ }
+diff --git a/packages/core/test/enterprise/transport-deadlines.test.ts b/packages/core/test/enterprise/transport-deadlines.test.ts
+new file mode 100644
+index 0000000..2e268e8
+--- /dev/null
++++ b/packages/core/test/enterprise/transport-deadlines.test.ts
+@@ -0,0 +1,342 @@
++import { describe, expect, test } from "bun:test"
++import { InferenceDeadline } from "../../src/enterprise/inference-deadline"
++
++const limits = { headers: 80, first: 80, idle: 80, total: 500 }
++const input = "https://inference.internal/v1/chat/completions"
++const init = { method: "POST", body: '{"model":"enterprise-coder","stream":true}' }
++const headers = { "content-type": "text/event-stream; charset=utf-8" }
++const token = 'data: {"choices":[{"delta":{"content":"hello"}}]}\n\n'
++const encode = (value: string) => new TextEncoder().encode(value)
++const pause = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds))
++describe("enterprise inference deadlines", () => {
++  test("aborts stalled headers without retrying", async () => {
++    const state = { calls: 0, aborted: false }
++    const send = InferenceDeadline.create((_input, request) => {
++      state.calls++
++      return new Promise<Response>((_resolve, reject) => {
++        request?.signal?.addEventListener("abort", () => {
++          state.aborted = true
++          reject(request.signal?.reason)
++        })
++      })
++    }, limits)
++    await expect(send(input, init, true)).rejects.toThrow("headers deadline")
++    expect(state).toEqual({ calls: 1, aborted: true })
++  })
++
++  test("cancels a late response even when fetch ignores its abort signal", async () => {
++    const state = { cancelled: false }
++    const response = new Response(
++      new ReadableStream({
++        cancel() {
++          state.cancelled = true
++        },
++      }),
++      { headers },
++    )
++    const send = InferenceDeadline.create(
++      async () => {
++        await pause(100)
++        return response
++      },
++      { ...limits, headers: 20 },
++    )
++    await expect(send(input, init, true)).rejects.toThrow("headers deadline")
++    await pause(120)
++    expect(state.cancelled).toBe(true)
++  })
++
++  test.each([undefined, "text/plain", "application/json"])(
++    "rejects missing/wrong streaming MIME %s and cancels the body",
++    async (type) => {
++      const state = { cancelled: false, signal: undefined as AbortSignal | undefined }
++      const send = InferenceDeadline.create(async (_input, request) => {
++        state.signal = request?.signal ?? undefined
++        return new Response(
++          new ReadableStream({
++            cancel() {
++              state.cancelled = true
++            },
++          }),
++          {
++            headers: type ? { "content-type": type } : {},
++          },
++        )
++      }, limits)
++      await expect(send(input, init, true)).rejects.toThrow("Content-Type")
++      expect(state.cancelled).toBe(true)
++      expect(state.signal?.aborted).toBe(true)
++    },
++  )
++
++  test("expires a stream with no chunks and closes the underlying reader", async () => {
++    const state = { cancelled: false }
++    const send = InferenceDeadline.create(
++      async () =>
++        new Response(
++          new ReadableStream({
++            cancel() {
++              state.cancelled = true
++            },
++          }),
++          { headers },
++        ),
++      limits,
++    )
++    const response = await send(input, init, true)
++    await expect(response.text()).rejects.toThrow("first deadline")
++    expect(state.cancelled).toBe(true)
++  })
++
++  test("rejects an immediate empty stream instead of reporting success", async () => {
++    const send = InferenceDeadline.create(async () => new Response("", { headers }), limits)
++    const response = await send(input, init, true)
++    await expect(response.text()).rejects.toThrow("ended before model output")
++  })
++
++  test("role deltas and SSE keepalives cannot satisfy the first-token deadline", async () => {
++    const state = { cancelled: false }
++    const send = InferenceDeadline.create(
++      async () =>
++        new Response(
++          periodic(': ping\n\ndata: {"choices":[{"delta":{"role":"assistant"}}]}\n\n', () => {
++            state.cancelled = true
++          }),
++          { headers },
++        ),
++      limits,
++    )
++    const response = await send(input, init, true)
++    await expect(response.text()).rejects.toThrow("first deadline")
++    expect(state.cancelled).toBe(true)
++  })
++
++  test("expires stalled generation after the first model token despite keepalives", async () => {
++    const send = InferenceDeadline.create(
++      async () =>
++        new Response(
++          periodic(": ping\n\n", () => {}, token),
++          { headers },
++        ),
++      limits,
++    )
++    const response = await send(input, init, true)
++    await expect(response.text()).rejects.toThrow("idle deadline")
++  })
++
++  test("total deadline terminates a stream that keeps producing tokens", async () => {
++    const send = InferenceDeadline.create(async () => new Response(periodic(token), { headers }), {
++      ...limits,
++      total: 120,
++    })
++    const response = await send(input, init, true)
++    await expect(response.text()).rejects.toThrow("total deadline")
++  })
++
++  test("caller cancellation interrupts a pending body read", async () => {
++    const abort = new AbortController()
++    const state = { cancelled: false, signal: undefined as AbortSignal | undefined }
++    const send = InferenceDeadline.create(async (_input, request) => {
++      state.signal = request?.signal ?? undefined
++      return new Response(
++        new ReadableStream({
++          cancel() {
++            state.cancelled = true
++          },
++        }),
++        { headers },
++      )
++    }, limits)
++    const response = await send(input, { ...init, signal: abort.signal }, true)
++    const pending = response.text()
++    abort.abort(new Error("user cancelled"))
++    await expect(pending).rejects.toThrow("user cancelled")
++    expect(state.cancelled).toBe(true)
++    expect(state.signal?.aborted).toBe(true)
++  })
++
++  test("does not send a request when already cancelled", async () => {
++    const send = InferenceDeadline.create(async () => {
++      throw new Error("must not fetch")
++    }, limits)
++    await expect(
++      send(input, { ...init, signal: AbortSignal.abort(new Error("already cancelled")) }, true),
++    ).rejects.toThrow("already cancelled")
++  })
++
++  test("downstream cancellation aborts inference and releases the source", async () => {
++    const state = { cancelled: false, signal: undefined as AbortSignal | undefined }
++    const send = InferenceDeadline.create(async (_input, request) => {
++      state.signal = request?.signal ?? undefined
++      return new Response(
++        new ReadableStream({
++          cancel() {
++            state.cancelled = true
++          },
++        }),
++        { headers },
++      )
++    }, limits)
++    const response = await send(input, init, true)
++    await response.body?.cancel()
++    expect(state.cancelled).toBe(true)
++    expect(state.signal?.aborted).toBe(true)
++  })
++
++  test("a hanging source cancel cannot hang downstream cancellation", async () => {
++    const source = new ReadableStream({ cancel: () => new Promise<void>(() => {}) })
++    const send = InferenceDeadline.create(async () => new Response(source, { headers }), limits)
++    const response = await send(input, init, true)
++    await response.body?.cancel()
++    expect(source.locked).toBe(false)
++  })
++
++  test("unexpected upstream closure propagates and aborts the request", async () => {
++    const state = { signal: undefined as AbortSignal | undefined }
++    const send = InferenceDeadline.create(async (_input, request) => {
++      state.signal = request?.signal ?? undefined
++      return new Response(
++        new ReadableStream({
++          start(controller) {
++            controller.error(new Error("upstream connection closed"))
++          },
++        }),
++        { headers },
++      )
++    }, limits)
++    const response = await send(input, init, true)
++    await expect(response.text()).rejects.toThrow("upstream connection closed")
++    expect(state.signal?.aborted).toBe(true)
++  })
++
++  test("non-streaming JSON and bounded error messages remain readable", async () => {
++    for (const status of [200, 503]) {
++      const data = '{"message":"fixture"}'
++      const send = InferenceDeadline.create(
++        async () =>
++          new Response(data, {
++            status,
++            headers: { "content-type": "application/json; charset=utf-8" },
++          }),
++        limits,
++      )
++      const response = await send(input, init, false)
++      expect(response.status).toBe(status)
++      expect(await response.text()).toBe(data)
++    }
++  })
++
++  test("redirect responses are rejected and their bodies cancelled", async () => {
++    const state = { cancelled: false }
++    const send = InferenceDeadline.create(
++      async () =>
++        new Response(
++          new ReadableStream({
++            cancel() {
++              state.cancelled = true
++            },
++          }),
++          { status: 307, headers: { location: "https://api.openai.com/" } },
++        ),
++      limits,
++    )
++    await expect(send(input, init, true)).rejects.toThrow("rejects redirects")
++    expect(state.cancelled).toBe(true)
++  })
++
++  test("cleans up timers after a complete stream and preserves its exact bytes", async () => {
++    const data = `${token}data: [DONE]\n\n`
++    const state = { signal: undefined as AbortSignal | undefined }
++    const send = InferenceDeadline.create(async (_input, request) => {
++      state.signal = request?.signal ?? undefined
++      return new Response(data, { headers })
++    }, limits)
++    const response = await send(input, init, true)
++    expect(await response.text()).toBe(data)
++    await pause(100)
++    expect(state.signal?.aborted).toBe(false)
++  })
++
++  test("handles UTF-8 and SSE events fragmented across transport chunks", async () => {
++    const data = encode('data: {"choices":[{"delta":{"content":"привет"}}]}\r\n\r\ndata: [DONE]\r\n\r\n')
++    const send = InferenceDeadline.create(
++      async () =>
++        new Response(
++          new ReadableStream({
++            start(controller) {
++              for (const value of data) controller.enqueue(new Uint8Array([value]))
++              controller.close()
++            },
++          }),
++          { headers },
++        ),
++      limits,
++    )
++    const response = await send(input, init, true)
++    expect(await response.text()).toBe(new TextDecoder().decode(data))
++  })
++
++  test("bounds stalled non-streaming JSON and error bodies too", async () => {
++    for (const status of [200, 503]) {
++      const send = InferenceDeadline.create(
++        async () =>
++          new Response(new ReadableStream(), {
++            status,
++            headers: { "content-type": "application/json" },
++          }),
++        limits,
++      )
++      const response = await send(input, init, false)
++      await expect(response.text()).rejects.toThrow("first deadline")
++    }
++  })
++
++  test("uses actual HTTP fetch: idle timeout closes the network connection", async () => {
++    const closed = Promise.withResolvers<void>()
++    const server = Bun.serve({
++      hostname: "127.0.0.1",
++      port: 0,
++      fetch(request) {
++        request.signal.addEventListener("abort", () => closed.resolve(), { once: true })
++        return new Response(
++          new ReadableStream({
++            start(controller) {
++              controller.enqueue(encode(token))
++            },
++            cancel() {
++              closed.resolve()
++            },
++          }),
++          { headers },
++        )
++      },
++    })
++    try {
++      const send = InferenceDeadline.create((input, request) => fetch(input, request), limits)
++      const response = await send(`${server.url}v1/chat/completions`, init, true)
++      await expect(response.text()).rejects.toThrow("idle deadline")
++      await Promise.race([
++        closed.promise,
++        pause(500).then(() => {
++          throw new Error("Connection was not closed")
++        }),
++      ])
++    } finally {
++      await server.stop(true)
++    }
++  })
++})
++
++function periodic(data: string, cancel = () => {}, first = "") {
++  const state = { timer: undefined as ReturnType<typeof setInterval> | undefined }
++  return new ReadableStream<Uint8Array>({
++    start(controller) {
++      if (first) controller.enqueue(encode(first))
++      state.timer = setInterval(() => controller.enqueue(encode(data)), 10)
++    },
++    cancel() {
++      clearInterval(state.timer)
++      cancel()
++    },
++  })
++}
+-- 
+2.51.1
+

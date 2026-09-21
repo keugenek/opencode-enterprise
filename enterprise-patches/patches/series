@@ -3,3 +3,6 @@
 0003-disable-remote-services.patch
 0004-tests-deployment-review.patch
 0005-windows-policy.patch
+0006-execution-permissions.patch
+0007-inference-deadlines.patch
+0008-native-desktop.patch
