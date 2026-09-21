@@ -4,7 +4,7 @@
 // https://playwright.dev/docs/api/class-electron#mocking-native-dialogs .
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import os from "node:os"
 import path from "node:path"
@@ -396,7 +396,9 @@ try {
   // creation. The output marker below must prove actual process execution.
   assert(Number.isInteger(pty.pid) && pty.pid >= 0, "PTY must satisfy its nonnegative PID API contract")
   terminalDiagnostic.startupPid = pty.pid
-  assert.equal(path.resolve(pty.cwd).toLowerCase(), path.resolve(workspace).toLowerCase())
+  // Windows TEMP may use an 8.3 name while the engine returns its long form.
+  const [actualDirectory, expectedDirectory] = await Promise.all([realpath(pty.cwd), realpath(workspace)])
+  assert.equal(actualDirectory.toLowerCase(), expectedDirectory.toLowerCase(), "PTY must use the selected directory")
   assert.notEqual(pty.command.toLowerCase(), unapprovedShell.toLowerCase(), "Repository shell override must be ignored")
   const connected = new URL(socket.url())
   assert.equal(connected.pathname, `/pty/${pty.id}/connect`)
