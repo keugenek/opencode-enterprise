@@ -3,10 +3,12 @@
 Дата review: 2026-09-05. Upstream: https://github.com/anomalyco/opencode, релиз v1.18.29,
 точный baseline: `16747470f976aca3d362ad730bcd3fe82ecc2c9a`.
 
-Это проверенный сборкой кандидат Linux CLI/TUI для дальнейшей enterprise-приёмки.
-Поддерживаются локальные CLI/TUI и `run`, один внутренний OpenAI-compatible
-Chat Completions endpoint и одна модель. Desktop, Web, ACP, облачные аккаунты,
-внешние плагины/MCP и экспериментальный V2 не входят в поддерживаемый профиль.
+Серия создаёт кандидаты Linux/Windows CLI/TUI и отдельный нативный Windows x64
+Desktop на Electron для дальнейшей enterprise-приёмки. Общая граница — один
+внутренний OpenAI-compatible Chat Completions endpoint и одна модель. Desktop
+включает собственный V1 engine; отдельный CLI или web server ему не нужен.
+Standalone Web, Linux/macOS Desktop, ACP, облачные аккаунты, внешние плагины/MCP
+и экспериментальный V2 не входят в выпускаемые профили.
 Это намеренно ограниченный профиль; полноценный универсальный дистрибутив требует
 отдельно проектировать управляемые исключения, внутренний каталог инструментов и аудит.
 
@@ -21,11 +23,18 @@ git fetch --no-tags https://github.com/anomalyco/opencode.git 16747470f976aca3d3
 patch_dir="$(pwd)/enterprise-patches/patches"
 git worktree add -b enterprise-runtime ../opencode-enterprise-runtime 16747470f976aca3d362ad730bcd3fe82ecc2c9a
 cd ../opencode-enterprise-runtime
-git am "$patch_dir"/000*.patch
+while IFS= read -r patch; do git am "$patch_dir/$patch" || exit; done < "$patch_dir/series"
 ```
 
 Серия: (1) доверенная конфигурация и одна модель; (2) транспорт и запреты обхода;
-(3) отключение удалённой телеметрии/sharing/cloud entrypoints; (4) тесты и документация; (5) Windows policy с проверкой NTFS ACL.
+(3) отключение удалённой телеметрии/sharing/cloud entrypoints; (4) тесты и документация;
+(5) Windows policy с проверкой NTFS ACL; (6) анализ shell и session-scoped approvals;
+(7) обязательные inference deadlines; (8) нативный Windows desktop с enterprise UI
+и ограниченным локальным backend; (9) блокировка редиректов PowerShell;
+(10) нормализация заголовка авторизации native sidecar; (11) защита запуска
+встроенного терминала; (12) совместимость локальных настроек и отключение
+запросов к неподдерживаемым каталогам UI; (13) загрузка встроенного WASM
+терминала без внешнего CDN. Точный порядок задаёт `patches/series`.
 Не применять вслепую к другой версии. После обновления повторить review изменённых
 путей выполнения и все release gates. Целевой форк: https://github.com/keugenek/opencode-enterprise.
 Эта директория содержит patch series; само её добавление в dev не включает
@@ -61,7 +70,11 @@ bun run script/build.ts --single --skip-install --skip-embed-web-ui
 Клиент не передаёт личные bearer tokens: аутентификация workload должна обеспечиваться
 внутренним gateway/mesh. Прочитайте GATEWAY-CONTRACT.md перед подключением vLLM.
 
-## Проверено
+## Исходная проверка baseline и дополнительные регрессии
+
+Следующие 32 теста и сборка относятся к первоначальному CLI-комплекту; они не
+подтверждают прохождение текущего Desktop CI. Для конкретного кандидата используйте
+успешный Actions run с совпадающими commit и manifest.
 
 - 32 теста: enterprise policy/transport и observability; 0 failures, 52 assertions.
 - `bun typecheck` в packages/core, packages/opencode, packages/tui.
@@ -83,7 +96,8 @@ bun run script/build.ts --single --skip-install --skip-embed-web-ui
 worktree:
 
 ```sh
-(cd packages/core && bun test test/enterprise/policy.test.ts test/effect/observability.test.ts)
+(cd packages/core && bun test test/enterprise/policy.test.ts test/enterprise/transport-deadlines.test.ts test/effect/observability.test.ts)
+(cd packages/opencode && bun test test/enterprise/execution-guards.test.ts test/permission/next.test.ts)
 (cd packages/core && bun typecheck)
 (cd packages/opencode && bun typecheck)
 (cd packages/tui && bun typecheck)
@@ -120,8 +134,10 @@ Workflow: [Enterprise build and release](../.github/workflows/enterprise-release
 
 Pipeline проверяет SHA256SUMS, создаёт отдельный worktree точного BASE_COMMIT,
 при необходимости загружает точный baseline SHA из upstream (release-коммит может
-отсутствовать в истории dev-форка), применяет серию из пяти патчей, устанавливает Bun 1.3.14 и зависимости по lockfile,
-запускает 32 направленных теста и typecheck трёх пакетов. Затем он собирает Linux
+отсутствовать в истории dev-форка), применяет всю нумерованную серию, устанавливает
+Bun 1.3.14 и зависимости по lockfile, запускает направленные регрессии и typecheck.
+Отдельный Windows Desktop job собирает Electron application и проверяет его запуск.
+Console job собирает Linux
 x64/glibc (AVX2) CLI и проверяет бинарник: версия, игнорирование cloud config,
 отказ для auto/yolo flags и остановка без администраторской политики.
 Пример policy устанавливается только на одноразовый GitHub runner; реальные
@@ -140,7 +156,9 @@ git push origin enterprise-v1.18.29-rc.1
 ```
 
 Assets: архив бинарника с инструкцией и LICENSE, архив патчей, архив точных
-патченных исходников, `build-manifest.json` и `SHA256SUMS`. Manifest фиксирует
+патченных исходников, `build-manifest-<profile>-<target>.json` и
+`SHA256SUMS-<profile>-<target>`. Desktop дополнительно включает NSIS installer,
+полный portable ZIP и screenshot при успешной записи smoke check. Manifest фиксирует
 коммит дистрибутива, baseline, tree hash исходников, версию Bun и хеши патчей/lockfile.
 SHA-256 подтверждает целостность скачанных файлов; это не криптографическая подпись
 издателя и не SBOM. Attestation/signing и сканирование конечного контейнера нужно
@@ -149,12 +167,12 @@ SHA-256 подтверждает целостность скачанных фа�
 Build job имеет только `contents: read`; публикация выполняется отдельным job с
 `contents: write` только для push релизного тега в этом форке. Actions закреплены
 по commit SHA, checkout не сохраняет token в Git-конфиге. Используются GitHub-hosted
-Ubuntu runners; сборка требует интернета для зависимостей. Для закрытого CI нужны
+Ubuntu и Windows runners; сборка требует интернета для зависимостей. Для закрытого CI нужны
 одобренные зеркала и отдельный доверенный runner, недоступный непроверенным PR.
 
 Автоматического production deploy и stable-release promotion нет до выполнения
-[ACCEPTANCE.md](ACCEPTANCE.md). macOS/Windows/ARM и контейнерные образы данным
-workflow не выпускаются. Унаследованные upstream workflow — отдельные процессы;
+[ACCEPTANCE.md](ACCEPTANCE.md). macOS, Linux Desktop, ARM и контейнерные образы
+данным workflow не выпускаются. Windows TUI и Windows Desktop — отдельные профили. Унаследованные upstream workflow — отдельные процессы;
 статус enterprise-сборки смотрите именно в `Enterprise build and release`.
 
 ## MVP toolkit и процесс допуска
@@ -162,7 +180,7 @@ workflow не выпускаются. Унаследованные upstream work
 Для нового пилота используйте [исполняемый MVP toolkit](../mvp/README.md):
 проверка профиля и бинарника, подготовка образа, отдельные persistent volumes,
 Kubernetes-манифесты и offline-проверка подписанного закрытого eval. В релизный
-набор добавлен `enterprise-mvp-toolkit.tar.gz`; public CI проверяет инструменты
+набор добавлен `enterprise-mvp-toolkit-<profile>-<target>.tar.gz`; public CI проверяет инструменты
 на синтетических данных. Сам закрытый eval выполняется в согласованной приватной
 среде и не входит в публичный workflow. См. [процесс security](../assurance/SECURITY-PROCESS.md),
 [контракт eval](../assurance/PRIVATE-EVAL.md) и [compliance](../assurance/COMPLIANCE.md).
@@ -172,8 +190,8 @@ Kubernetes-манифесты и offline-проверка подписанног
 Общие enterprise-патчи, настройки, CI и регрессии разрабатываются публично;
 приватный GitLab потребляет проверенный публичный commit. См.
 [contribution guide](../CONTRIBUTING.md), [границы кода и данных](../community/DEVELOPMENT-MODEL.md)
-и [проверку обновлений](../community/UPSTREAM.md). Серия расширяема: сейчас в ней
-четыре патча, новые изменения добавляются следующими номерами с обновлением checksums.
+и [проверку обновлений](../community/UPSTREAM.md). Серия расширяема: новые изменения
+добавляются следующими номерами с обновлением `patches/series` и checksums.
 
 ## Windows x64
 
@@ -191,5 +209,23 @@ Windows PowerShell 5.1 и системный каталог `C:\Windows` обя�
 
 [Схема деплоя](../delivery/DEPLOYMENT-ARCHITECTURE.md) описывает VPN, proxy,
 LLM-router, общий план и кеши. Windows требует отдельной приёмки стандартной учётной
-записью, реального inference/PTY, защиты сети и подписи бинарника. Известные риски
-таймаутов и приоритетов saved approvals этим портом не исправляются.
+записью, реального inference/PTY, защиты сети и подписи бинарника. Патчи 0006/0007
+добавляют отдельные исправления shell/approvals и inference deadlines; сам Windows
+порт 0005 этих исправлений не содержит.
+
+
+## Native Windows Desktop
+
+Отдельный артефакт `enterprise-desktop-windows-x64` содержит native Electron app:
+NSIS installer `opencode-enterprise-desktop-VERSION-win-x64.exe` и полный portable
+ZIP `opencode-enterprise-desktop-VERSION-windows-x64-portable.zip`. UI и V1 engine
+включены в приложение; standalone CLI скачивать для его запуска не требуется.
+Профиль не добавляет multi-user service, cloud onboarding или экспериментальный V2.
+
+Это **unsigned public CI candidate**. Сборка/desktop smoke и screenshot должны
+быть подтверждены успешным Actions run; закрытый eval публичным CI не выполняется.
+Инструкция по защищённой policy, отдельному desktop install directory и запуску
+стандартным пользователем — [delivery/DESKTOP.md](../delivery/DESKTOP.md).
+Профили `console-linux-x64`, `console-windows-x64` и `desktop-windows-x64`
+имеют отдельные исходники/патчи/toolkit, manifest и checksums, чтобы assets разных
+платформ не перезаписывались при публикации релиза.

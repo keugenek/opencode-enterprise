@@ -1,0 +1,259 @@
+From 564a111f7eaae942892abe29ce01b8c822a1a1a5 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Mon, 21 Sep 2026 13:47:12 +0200
+Subject: [PATCH] fix(desktop): preserve local settings and skip disabled
+ catalogs
+
+---
+ .../src/context/global-sync/bootstrap.test.ts | 28 +++++++++
+ .../app/src/context/global-sync/bootstrap.ts  | 10 ++-
+ packages/app/src/context/server-sync.test.ts  | 30 +++++++++
+ packages/app/src/context/server-sync.tsx      |  3 +
+ packages/desktop/src/main/enterprise.test.ts  | 62 +++++++++++++++++--
+ packages/desktop/src/main/enterprise.ts       |  5 +-
+ 6 files changed, 130 insertions(+), 8 deletions(-)
+
+diff --git a/packages/app/src/context/global-sync/bootstrap.test.ts b/packages/app/src/context/global-sync/bootstrap.test.ts
+index a95706a..9aa55df 100644
+--- a/packages/app/src/context/global-sync/bootstrap.test.ts
++++ b/packages/app/src/context/global-sync/bootstrap.test.ts
+@@ -327,4 +327,32 @@ describe("query keys", () => {
+     expect(calls).toEqual([{ location: { directory: "/repo" } }])
+     expect(result).toHaveLength(1)
+   })
++
++  test("enterprise reference queries return empty without contacting either API", async () => {
++    const calls: string[] = []
++    const api = {
++      list: async () => {
++        calls.push("current")
++        throw new Error("Reference endpoint must not be requested")
++      },
++    } as unknown as ReferenceApi
++    const legacy = {
++      v2: {
++        reference: {
++          list: async () => {
++            calls.push("legacy")
++            throw new Error("Legacy reference endpoint must not be requested")
++          },
++        },
++      },
++    } as unknown as OpencodeClient
++    for (const protocol of ["v1", "v2"] as const) {
++      expect(
++        await new QueryClient().fetchQuery(
++          loadReferencesQuery(ServerScope.local, "/repo", api, legacy, Promise.resolve(protocol), true),
++        ),
++      ).toEqual([])
++    }
++    expect(calls).toEqual([])
++  })
+ })
+diff --git a/packages/app/src/context/global-sync/bootstrap.ts b/packages/app/src/context/global-sync/bootstrap.ts
+index 0f3e473..59c74e3 100644
+--- a/packages/app/src/context/global-sync/bootstrap.ts
++++ b/packages/app/src/context/global-sync/bootstrap.ts
+@@ -24,6 +24,7 @@ import type {
+   SessionApi,
+ } from "@opencode-ai/client/promise"
+ import { showToast } from "@/utils/toast"
++import { enterprise } from "@/utils/enterprise"
+ import { getFilename } from "@opencode-ai/core/util/path"
+ import { retry } from "@opencode-ai/core/util/retry"
+ import { batch } from "solid-js"
+@@ -316,14 +317,17 @@ export const loadReferencesQuery = (
+   api: ReferenceListApi,
+   legacy?: OpencodeClient,
+   protocol?: Promise<ServerProtocol>,
++  restricted = enterprise,
+ ) =>
+   queryOptions<ReferenceInfo[]>({
+     queryKey: [scope, directory, "references"] as const,
+-    queryFn: () =>
+-      retry(async () => {
++    queryFn: () => {
++      if (restricted) return Promise.resolve([])
++      return retry(async () => {
+         if ((await protocol) === "v1" && legacy) return (await legacy.v2.reference.list()).data?.data ?? []
+         return api.list({ location: { directory } }).then((result) => result.data)
+-      }).catch(() => []),
++      }).catch(() => [])
++    },
+     placeholderData: [],
+   })
+ 
+diff --git a/packages/app/src/context/server-sync.test.ts b/packages/app/src/context/server-sync.test.ts
+index 7821a09..5b71cc1 100644
+--- a/packages/app/src/context/server-sync.test.ts
++++ b/packages/app/src/context/server-sync.test.ts
+@@ -18,6 +18,36 @@ import type { ServerApi } from "@/utils/server"
+ type McpApi = ServerApi["mcp"]
+ 
+ describe("MCP queries", () => {
++  test("enterprise resource queries complete empty without contacting either API", async () => {
++    const calls: string[] = []
++    const api = {
++      resource: {
++        catalog: async () => {
++          calls.push("current")
++          throw new Error("MCP resources must not be requested")
++        },
++      },
++    } as unknown as McpApi
++    const legacy = {
++      experimental: {
++        resource: {
++          list: async () => {
++            calls.push("legacy")
++            throw new Error("Legacy MCP resources must not be requested")
++          },
++        },
++      },
++    } as unknown as OpencodeClient
++    for (const protocol of ["v1", "v2"] as const) {
++      expect(
++        await new QueryClient().fetchQuery(
++          loadMcpResourcesQuery(ServerScope.local, "/repo", api, legacy, Promise.resolve(protocol), true),
++        ),
++      ).toEqual({})
++    }
++    expect(calls).toEqual([])
++  })
++
+   test("loads current servers for the requested location", async () => {
+     const calls: unknown[] = []
+     const queryClient = new QueryClient()
+diff --git a/packages/app/src/context/server-sync.tsx b/packages/app/src/context/server-sync.tsx
+index 13a0b74..58d338f 100644
+--- a/packages/app/src/context/server-sync.tsx
++++ b/packages/app/src/context/server-sync.tsx
+@@ -7,6 +7,7 @@ import type {
+   SessionStatus,
+ } from "@opencode-ai/sdk/v2/client"
+ import { showToast } from "@/utils/toast"
++import { enterprise } from "@/utils/enterprise"
+ import { getFilename } from "@opencode-ai/core/util/path"
+ import { type Accessor, batch, createMemo, getOwner, onCleanup, onMount, untrack } from "solid-js"
+ import { createStore, produce, reconcile } from "solid-js/store"
+@@ -118,6 +119,7 @@ export const loadMcpResourcesQuery = (
+   api: McpResourceApi,
+   legacy?: OpencodeClient,
+   protocol?: Promise<"v1" | "v2">,
++  restricted = enterprise,
+ ): ApiQueryOptions<Record<string, McpResource>, readonly [ServerScope, string, "mcpResources"]> =>
+   queryOptions<
+     Record<string, McpResource>,
+@@ -127,6 +129,7 @@ export const loadMcpResourcesQuery = (
+   >({
+     queryKey: [scope, directory, "mcpResources"] as const,
+     queryFn: async () => {
++      if (restricted) return {}
+       if ((await protocol) === "v1" && legacy) {
+         return Object.fromEntries(
+           Object.entries((await legacy.experimental.resource.list()).data ?? {}).map(([key, resource]) => [
+diff --git a/packages/desktop/src/main/enterprise.test.ts b/packages/desktop/src/main/enterprise.test.ts
+index 91b7351..191449e 100644
+--- a/packages/desktop/src/main/enterprise.test.ts
++++ b/packages/desktop/src/main/enterprise.test.ts
+@@ -1,4 +1,6 @@
+ import { describe, expect, test } from "bun:test"
++import { Persist, PersistTesting } from "../../../app/src/utils/persist"
++import { SETTINGS_STORE } from "./store-keys"
+ import {
+   enterpriseRequest,
+   enterpriseRequestHeaders,
+@@ -58,18 +60,70 @@ describe("native enterprise boundary", () => {
+         Accept: "application/json",
+       })
+     }
+-    for (const url of ["oc://renderer/index.html", "http://127.0.0.1:41966/global/health", "https://external.invalid"]) {
++    for (const url of [
++      "oc://renderer/index.html",
++      "http://127.0.0.1:41966/global/health",
++      "https://external.invalid",
++    ]) {
+       expect(enterpriseRequestHeaders(url, { Accept: "application/json" })).toEqual({ Accept: "application/json" })
+     }
+   })
+-  test("IPC store names cannot escape application state directory", () => {
+-    expect(validStoreName("opencode.settings.dat")).toBe(true)
+-    expect(validStoreName("opencode.window.123.dat")).toBe(true)
++  test("IPC permits actual renderer default, global, window, workspace, session and draft stores", () => {
++    const names = [
++      "default.dat", // createPlatform.storage() default for settings.v3/app-version.v1/highlights.v1
++      SETTINGS_STORE,
++      "opencode.settings.dat",
++      "opencode.updater",
++      Persist.global("language").storage,
++      PersistTesting.windowStorage("f89ecbde-2353-4163-84a8-5042b22be48d"),
++      PersistTesting.windowStorage("browser"),
++      Persist.draft("draft-a", "prompt").storage,
++    ]
++    for (const directory of [
++      "C:\\Users\\Alice\\project",
++      "C:/Users/Alice/project",
++      "/home/alice/project",
++      "\\\\host\\share\\project",
++      "",
++    ]) {
++      const workspace = Persist.workspace(directory, "terminal")
++      names.push(
++        workspace.storage,
++        ...(workspace.legacyStorageNames ?? []),
++        Persist.session(directory, "ses_test", "layout").storage,
++      )
++    }
++    for (const name of names) {
++      expect(name).toBeDefined()
++      expect(validStoreName(name!)).toBe(true)
++    }
++  })
++  test("IPC store names cannot escape application state directory or select Windows alternate streams", () => {
+     for (const name of [
+       "../enterprise.json",
+       "C:\\Program Files\\OpenCode Enterprise\\enterprise.json",
+       "opencode/../../policy",
+       "opencode..evil",
++      "default.dat/../policy",
++      "default.dat\\..\\policy",
++      "default.dat:credentials",
++      "default.dat::$DATA",
++      "default.dat.",
++      "default.dat ",
++      "default.dat\u0000",
++      "default.dat\n",
++      "default2.dat",
++      "/default.dat",
++      "C:default.dat",
++      "\\\\host\\share\\default.dat",
++      "opencode.settings:credentials",
++      "opencode.settings::$DATA",
++      "opencode.settings\u0000",
++      "opencode.settings\n",
++      "opencode.settings\r\n",
++      "opencode.settings\nmalicious",
++      "CON",
++      "NUL.dat",
+     ])
+       expect(validStoreName(name)).toBe(false)
+   })
+diff --git a/packages/desktop/src/main/enterprise.ts b/packages/desktop/src/main/enterprise.ts
+index 13f9ea1..576255b 100644
+--- a/packages/desktop/src/main/enterprise.ts
++++ b/packages/desktop/src/main/enterprise.ts
+@@ -52,7 +52,10 @@ export function enterpriseSidecarEnv(input: NodeJS.ProcessEnv, userDataPath: str
+ }
+ 
+ export function validStoreName(name: string) {
+-  return /^opencode[\w.-]{0,180}$/.test(name) && !name.includes("..")
++  // The shared renderer uses this exact legacy store for settings, app version
++  // and highlights, as well as migration reads from the scoped stores.
++  if (name === "default.dat") return true
++  return /^opencode[\w.-]{0,180}$/.exec(name)?.[0] === name && !name.includes("..")
+ }
+ 
+ export function enterpriseCsp() {
+-- 
+2.51.1
+

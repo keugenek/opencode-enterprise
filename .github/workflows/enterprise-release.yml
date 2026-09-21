@@ -82,20 +82,23 @@ jobs:
         run: |
           bun install --frozen-lockfile --ignore-scripts
           bun run --cwd packages/core fix-node-pty
+      - name: Install smoke-test policy on disposable runner
+        run: |
+          test ! -e /etc/opencode/enterprise.json
+          sudo install -d -o root -g root -m 0755 /etc/opencode
+          sudo install -o root -g root -m 0644 "$RUNNER_TEMP/patched-source/enterprise/enterprise.example.json" /etc/opencode/enterprise.json
       - name: Enterprise regression tests
         working-directory: ${{ runner.temp }}/patched-source/packages/core
-        run: bun test test/enterprise/policy.test.ts test/effect/observability.test.ts
+        run: bun test test/enterprise test/effect/observability.test.ts
+      - name: Execution and dependency-patch regressions
+        working-directory: ${{ runner.temp }}/patched-source/packages/opencode
+        run: bun test --timeout 30000 test/enterprise test/patched-dependencies.test.ts
       - name: Typecheck affected packages
         working-directory: ${{ runner.temp }}/patched-source
         run: |
           (cd packages/core && bun typecheck)
           (cd packages/opencode && bun typecheck)
           (cd packages/tui && bun typecheck)
-      - name: Install smoke-test policy on disposable runner
-        run: |
-          test ! -e /etc/opencode/enterprise.json
-          sudo install -d -o root -g root -m 0755 /etc/opencode
-          sudo install -o root -g root -m 0644 "$RUNNER_TEMP/patched-source/enterprise/enterprise.example.json" /etc/opencode/enterprise.json
       - name: Build restricted CLI without embedded web UI
         working-directory: ${{ runner.temp }}/patched-source/packages/opencode
         run: bun run script/build.ts --single --skip-install --skip-embed-web-ui
@@ -153,9 +156,33 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           bun run --cwd packages/core fix-node-pty
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install protected policy on disposable runner
+        shell: powershell
+        run: |
+          & "$env:RUNNER_TEMP/patched-source/enterprise/windows/install.ps1" -PolicyOnly -PolicyPath "$env:RUNNER_TEMP/patched-source/enterprise/enterprise.example.json"
       - name: Enterprise regression tests
         working-directory: ${{ runner.temp }}/patched-source/packages/core
-        run: bun test test/enterprise/policy.test.ts test/effect/observability.test.ts
+        run: bun test test/enterprise test/effect/observability.test.ts
+      - name: Execution and dependency-patch regressions
+        working-directory: ${{ runner.temp }}/patched-source/packages/opencode
+        run: bun test --timeout 30000 test/enterprise test/patched-dependencies.test.ts
+      - name: Verify execution guards in PowerShell and Git Bash
+        working-directory: ${{ runner.temp }}/patched-source/packages/opencode
+        run: |
+          $originalShell = $env:SHELL
+          try {
+            $shells = @((Get-Command pwsh -ErrorAction Stop).Source, 'C:\Program Files\Git\bin\bash.exe')
+            foreach ($shell in $shells) {
+              if (!(Test-Path -LiteralPath $shell -PathType Leaf)) { throw "Required shell missing: $shell" }
+              $env:SHELL = $shell
+              bun -e 'import { Shell } from "@opencode-ai/core/shell"; if (Shell.acceptable() !== process.env.SHELL) throw Error("wrong shell"); console.log(Shell.acceptable())'
+              if ($LASTEXITCODE -ne 0) { throw "Shell selection failed: $shell" }
+              bun test test/enterprise/execution-guards.test.ts --timeout 30000
+              if ($LASTEXITCODE -ne 0) { throw "Execution guards failed: $shell" }
+            }
+          } finally {
+            $env:SHELL = $originalShell
+          }
       - name: Typecheck affected packages
         working-directory: ${{ runner.temp }}/patched-source
         run: |
@@ -165,10 +192,6 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             Pop-Location
           }
-      - name: Install protected policy on disposable runner
-        shell: powershell
-        run: |
-          & "$env:RUNNER_TEMP/patched-source/enterprise/windows/install.ps1" -PolicyOnly -PolicyPath "$env:RUNNER_TEMP/patched-source/enterprise/enterprise.example.json"
       - name: Build restricted Windows CLI
         working-directory: ${{ runner.temp }}/patched-source/packages/opencode
         run: bun run script/build.ts --single --skip-install --skip-embed-web-ui
@@ -187,9 +210,125 @@ jobs:
           retention-days: 14
           compression-level: 0
 
+  desktop:
+    name: Test and build native Windows desktop
+    runs-on: windows-2025
+    timeout-minutes: 50
+    env:
+      ENTERPRISE_PROFILE: desktop
+      ENTERPRISE_TARGET: windows-x64
+      OPENCODE_CHANNEL: enterprise
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Preserve reviewed patch bytes
+        run: git config --global core.autocrlf false
+      - name: Checkout distribution
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select version
+        run: |
+          if ($env:GITHUB_REF -like 'refs/tags/*') {
+            if ($env:GITHUB_REF -notmatch '^refs/tags/enterprise-v([0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?)$') { throw 'Invalid release tag' }
+            $version = $Matches[1]
+          } else { $version = "0.0.0-ci.$env:GITHUB_RUN_NUMBER" }
+          "OPENCODE_VERSION=$version" >> $env:GITHUB_ENV
+      - name: Verify checksums and apply reviewed patches
+        run: |
+          python enterprise-patches/ci/prepare.py "$env:RUNNER_TEMP/patched-source"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Setup pinned Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: '1.3.14'
+      - name: Setup Node for native Electron packaging
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install locked dependencies without lifecycle scripts
+        working-directory: ${{ runner.temp }}/patched-source
+        run: |
+          bun install --frozen-lockfile --ignore-scripts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bun run --cwd packages/core fix-node-pty
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install pinned Electron runtime
+        working-directory: ${{ runner.temp }}/patched-source/packages/desktop
+        run: node node_modules/electron/install.js
+      - name: Install protected policy on disposable runner
+        shell: powershell
+        run: |
+          & "$env:RUNNER_TEMP/patched-source/enterprise/windows/install.ps1" -PolicyOnly -PolicyPath "$env:RUNNER_TEMP/patched-source/enterprise/enterprise.example.json"
+      - name: Enterprise core and execution regressions
+        working-directory: ${{ runner.temp }}/patched-source
+        run: |
+          Push-Location packages/core
+          bun test test/enterprise test/effect/observability.test.ts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+          Push-Location packages/opencode
+          bun test --timeout 30000 test/enterprise test/patched-dependencies.test.ts test/server/enterprise-desktop.test.ts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+      - name: Enterprise native frontend regressions
+        working-directory: ${{ runner.temp }}/patched-source/packages/app
+        run: bun test --conditions=solid --preload ./happydom.ts ./src/utils/enterprise.test.ts ./src/context/server.test.ts ./src/components/prompt-input/build-request-parts.test.ts ./src/context/permission-auto-respond.test.ts ./src/utils/terminal-websocket-url.test.ts ./src/context/global-sync/bootstrap.test.ts ./src/context/server-sync.test.ts
+      - name: Native packaging regression tests
+        working-directory: ${{ runner.temp }}/patched-source/packages/desktop
+        run: bun test scripts/enterprise-build.test.ts electron-builder.config.test.ts src/main/enterprise.test.ts
+      - name: Typecheck native desktop and shared UI
+        working-directory: ${{ runner.temp }}/patched-source
+        run: |
+          foreach ($package in @('core', 'opencode', 'app', 'desktop')) {
+            Push-Location "packages/$package"
+            bun typecheck
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            Pop-Location
+          }
+      - name: Build patched Node sidecar and standard native desktop
+        working-directory: ${{ runner.temp }}/patched-source/packages/desktop
+        run: |
+          bun ./scripts/prepare.ts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bun run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package unsigned Windows installer
+        working-directory: ${{ runner.temp }}/patched-source/packages/desktop
+        run: bun run package:win --x64 --publish never
+      - name: Smoke-test actual native client and authenticated sidecar
+        run: |
+          node enterprise-patches/ci/smoke-desktop.mjs "$env:RUNNER_TEMP/patched-source/packages/desktop/dist/win-unpacked/OpenCode Enterprise Desktop.exe" "$env:RUNNER_TEMP/patched-source" "$env:RUNNER_TEMP/enterprise-desktop-smoke.png"
+      - name: Package installer, portable client and source evidence
+        env:
+          ENTERPRISE_DESKTOP_SCREENSHOT: ${{ runner.temp }}/enterprise-desktop-smoke.png
+        run: python enterprise-patches/ci/package.py "$env:RUNNER_TEMP/patched-source" "$env:RUNNER_TEMP/release-assets"
+      - name: Upload tested native desktop artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: enterprise-desktop-windows-x64
+          path: ${{ runner.temp }}/release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Upload desktop diagnostics
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: enterprise-desktop-diagnostics
+          path: |
+            ${{ runner.temp }}/enterprise-desktop-smoke*.png
+            ${{ runner.temp }}/enterprise-desktop-smoke*.json
+            ${{ runner.temp }}/enterprise-desktop-smoke.log
+          if-no-files-found: ignore
+          retention-days: 7
+
   release:
     name: Publish tagged prerelease
-    needs: [build, windows]
+    needs: [build, windows, desktop]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/enterprise-v') && github.repository == 'keugenek/opencode-enterprise'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -199,7 +338,8 @@ jobs:
       - name: Download tested artifacts from this run
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          name: enterprise-linux-x64
+          pattern: enterprise-*
+          merge-multiple: true
           path: release-assets
       - name: Verify assets and publish
         shell: bash
@@ -209,18 +349,22 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           cd release-assets
-          sha256sum -c SHA256SUMS
+          for checksums in SHA256SUMS-*; do sha256sum -c "$checksums"; done
           python3 - <<'PY'
-          import json, os
-          manifest = json.load(open('build-manifest.json'))
-          assert manifest['distribution_commit'] == os.environ['GITHUB_SHA'], 'Unexpected source commit'
-          assert manifest['version'] == os.environ['RELEASE_TAG'].removeprefix('enterprise-v'), 'Version mismatch'
+          import json, os, pathlib
+          expected = {'console-linux-x64', 'console-windows-x64', 'desktop-windows-x64'}
+          files = list(pathlib.Path('.').glob('build-manifest-*.json'))
+          assert {p.name.removeprefix('build-manifest-').removesuffix('.json') for p in files} == expected, 'Missing or unexpected build profile'
+          for file in files:
+              manifest = json.loads(file.read_text())
+              assert manifest['distribution_commit'] == os.environ['GITHUB_SHA'], 'Unexpected source commit'
+              assert manifest['version'] == os.environ['RELEASE_TAG'].removeprefix('enterprise-v'), 'Version mismatch'
           PY
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          Restricted OpenCode Linux x64/glibc (AVX2) CLI/TUI candidate.
+          Restricted standard OpenCode Linux and Windows x64 (AVX2) CLI/TUI candidates, plus the native Windows x64 Electron desktop client (NSIS installer and portable ZIP).
 
-          Includes a compiled binary, patched source, the reviewed patch series, offline MVP installation toolkit and assurance process, build manifest and SHA-256 checksums. Requires administrator-managed /etc/opencode/enterprise.json and an internal inference gateway.
+          Each build includes its compiled binary, patched source, reviewed patch series, offline MVP toolkit, uniquely named build manifest and SHA-256 checksums. Requires an administrator-managed policy and an internal inference gateway. Read DESKTOP.md for the administrator-managed Windows policy and native client setup. Windows desktop candidates are unsigned; production code signing requires your release configuration.
 
-          Patch tests, public MVP tooling tests, typechecks and compiled-binary smoke checks passed in this workflow. Private customer evaluation is not run in public CI. Actual vLLM inference, production gateway, deployed network isolation and final image/SBOM scanning remain acceptance gates. This prerelease is not production certification.
+          Patch tests, public MVP tooling tests, typechecks and compiled-binary smoke checks passed in this workflow. The desktop job additionally launches the actual Electron client and checks its authenticated patched sidecar and native rendering. Private customer evaluation is not run in public CI. Actual vLLM inference, production gateway, deployed network isolation and final image/SBOM scanning remain acceptance gates. This prerelease is not production certification.
           NOTES
           gh release create "$RELEASE_TAG" ./* --verify-tag --prerelease --latest=false --title "OpenCode Enterprise $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"

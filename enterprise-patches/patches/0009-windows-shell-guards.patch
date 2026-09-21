@@ -1,0 +1,83 @@
+From 7553355e1179d2723bcfe818550f7c35d7fa61dc Mon Sep 17 00:00:00 2001
+From: Enterprise Engineering <enterprise@localhost>
+Date: Mon, 21 Sep 2026 13:09:26 +0200
+Subject: [PATCH] fix(windows): reject misclassified PowerShell redirection
+ tokens
+
+---
+ packages/opencode/src/tool/shell.ts           | 12 +++++++-
+ .../test/enterprise/execution-guards.test.ts  | 28 ++++++++++++++++++-
+ 2 files changed, 38 insertions(+), 2 deletions(-)
+
+diff --git a/packages/opencode/src/tool/shell.ts b/packages/opencode/src/tool/shell.ts
+index b028fe2..7c44d57 100644
+--- a/packages/opencode/src/tool/shell.ts
++++ b/packages/opencode/src/tool/shell.ts
+@@ -272,7 +272,17 @@ function validateEnterpriseCommand(root: Node) {
+   const pending = [root]
+   while (pending.length) {
+     const node = pending.pop()!
+-    if (node.type.includes("redirect") || node.type.includes("heredoc") || node.type === "process_substitution") {
++    // The pinned PowerShell grammar labels a leading `>`, `>>` or `2>`
++    // as a command name, including after a statement separator. Check the
++    // command-name token too; quoted argument strings remain ordinary data.
++    const redirectName =
++      (node.type === "command_name" || node.type === "command_name_expr") && /^(?:\d+|\*)?[<>]/.test(node.text)
++    if (
++      redirectName ||
++      node.type.includes("redirect") ||
++      node.type.includes("heredoc") ||
++      node.type === "process_substitution"
++    ) {
+       throw new Error("Enterprise shell policy: redirections are disabled; use the file editing tools.")
+     }
+     pending.push(...node.namedChildren.filter((child): child is Node => child !== null))
+diff --git a/packages/opencode/test/enterprise/execution-guards.test.ts b/packages/opencode/test/enterprise/execution-guards.test.ts
+index 63e8cf1..54d3b31 100644
+--- a/packages/opencode/test/enterprise/execution-guards.test.ts
++++ b/packages/opencode/test/enterprise/execution-guards.test.ts
+@@ -98,7 +98,15 @@ const child = SessionID.make("ses_enterprise_child")
+ const deny: PermissionV1.Ruleset = [{ permission: "bash", pattern: "*", action: "deny" }]
+ 
+ describe("enterprise execution guards", () => {
+-  for (const input of ["> marker", ">> marker", "echo changed > marker", "echo changed >> marker"]) {
++  for (const input of [
++    "> marker",
++    ">> marker",
++    "  > marker",
++    "2> marker",
++    "echo initial; > marker",
++    "echo changed > marker",
++    "echo changed >> marker",
++  ]) {
+     it.instance(`refuses redirection without creating or truncating files: ${input}`, () =>
+       Effect.gen(function* () {
+         const instance = yield* TestInstance
+@@ -206,6 +214,24 @@ describe("enterprise execution guards", () => {
+     }),
+   )
+ 
++  it.instance("quoted redirection-like text remains data in an approved command", () =>
++    Effect.gen(function* () {
++      const instance = yield* TestInstance
++      const permission = yield* Permission.Service
++      const tool = yield* init()
++      const execution = yield* tool
++        .execute({ command: "echo '1 > 0; >> marker'" }, context(permission, parent, []))
++        .pipe(Effect.forkScoped)
++      const request = yield* pending(permission, parent)
++      expect(request.patterns).toContain("echo '1 > 0; >> marker'")
++      yield* permission.reply({ requestID: request.id, reply: "once" })
++      const result = yield* Fiber.join(execution)
++      expect(result.metadata.exit).toBe(0)
++      expect(result.output).toContain("1 > 0; >> marker")
++      expect(existsSync(path.join(instance.directory, "marker"))).toBe(false)
++    }),
++  )
++
+   test("configured specific allow still overrides its earlier fallback deny", () => {
+     const ruleset = Permission.fromConfig({ bash: { "*": "deny", "git status": "allow" } })
+     expect(Permission.evaluate("bash", "git status", ruleset).action).toBe("allow")
+-- 
+2.51.1
+
