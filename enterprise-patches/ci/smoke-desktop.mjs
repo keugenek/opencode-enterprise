@@ -392,7 +392,10 @@ try {
   assert.equal(ptyResponse.status(), 200, "Native terminal must create a real PTY")
   const pty = await ptyResponse.json()
   assert.equal(pty.status, "running")
-  assert(Number.isInteger(pty.pid) && pty.pid > 0)
+  // Pty.Info declares a nonnegative PID; Windows ConPTY may report zero at
+  // creation. The output marker below must prove actual process execution.
+  assert(Number.isInteger(pty.pid) && pty.pid >= 0, "PTY must satisfy its nonnegative PID API contract")
+  terminalDiagnostic.startupPid = pty.pid
   assert.equal(path.resolve(pty.cwd).toLowerCase(), path.resolve(workspace).toLowerCase())
   assert.notEqual(pty.command.toLowerCase(), unapprovedShell.toLowerCase(), "Repository shell override must be ignored")
   const connected = new URL(socket.url())
