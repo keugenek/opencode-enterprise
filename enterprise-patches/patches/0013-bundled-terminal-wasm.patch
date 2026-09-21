@@ -1,0 +1,51 @@
+From c74c9ea4a9857aad5ed4565f4405d397a0e69da9 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Mon, 21 Sep 2026 13:59:49 +0200
+Subject: [PATCH] fix(desktop): permit the bundled terminal WebAssembly asset
+
+---
+ packages/desktop/src/main/enterprise.test.ts | 16 ++++++++++++++++
+ packages/desktop/src/main/enterprise.ts      |  2 +-
+ 2 files changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/packages/desktop/src/main/enterprise.test.ts b/packages/desktop/src/main/enterprise.test.ts
+index 191449e..c4c5370 100644
+--- a/packages/desktop/src/main/enterprise.test.ts
++++ b/packages/desktop/src/main/enterprise.test.ts
+@@ -51,6 +51,22 @@ describe("native enterprise boundary", () => {
+     expect(result).not.toHaveProperty("OPENCODE_WORKSPACE_ID")
+     expect(result.PATH).toBe("/tools")
+   })
++  test("bundled terminal WASM can load from data without admitting remote connections or script eval", () => {
++    setEnterpriseConnection({ url: "http://127.0.0.1:41965", password: "per-launch-credential-with-32-bytes" })
++    const directives = enterpriseCsp().split("; ")
++    expect(directives.find((value) => value.startsWith("connect-src "))).toBe(
++      "connect-src 'self' http://127.0.0.1:41965 ws://127.0.0.1:41965 data:",
++    )
++    expect(directives.find((value) => value.startsWith("script-src "))).toBe("script-src 'self' 'wasm-unsafe-eval'")
++    expect(enterpriseRequest("data:application/wasm;base64,AGFzbQEAAAA=").allowed).toBe(true)
++    for (const url of [
++      "https://cdn.invalid/ghostty-vt.wasm",
++      "http://10.0.0.1/ghostty-vt.wasm",
++      "http://127.0.0.1:41966/ghostty-vt.wasm",
++    ]) {
++      expect(enterpriseRequest(url).allowed).toBe(false)
++    }
++  })
+   test("native HTTP and WebSocket credentials use one string request header on the exact sidecar", () => {
+     setEnterpriseConnection({ url: "http://127.0.0.1:41965", password: "per-launch-credential-with-32-bytes" })
+     const expected = `Basic ${Buffer.from("opencode:per-launch-credential-with-32-bytes").toString("base64")}`
+diff --git a/packages/desktop/src/main/enterprise.ts b/packages/desktop/src/main/enterprise.ts
+index 576255b..af5d0d5 100644
+--- a/packages/desktop/src/main/enterprise.ts
++++ b/packages/desktop/src/main/enterprise.ts
+@@ -60,5 +60,5 @@ export function validStoreName(name: string) {
+ 
+ export function enterpriseCsp() {
+   const endpoint = connection?.url ?? "http://127.0.0.1:1"
+-  return `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ${endpoint} ${endpoint.replace("http:", "ws:")}; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`
++  return `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ${endpoint} ${endpoint.replace("http:", "ws:")} data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`
+ }
+-- 
+2.51.1
+

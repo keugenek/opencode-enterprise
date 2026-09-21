@@ -10,3 +10,4 @@
 0010-native-request-headers.patch
 0011-native-terminal-startup.patch
 0012-native-preferences-bootstrap.patch
+0013-bundled-terminal-wasm.patch

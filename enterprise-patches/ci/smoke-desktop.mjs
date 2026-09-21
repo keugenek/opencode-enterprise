@@ -57,6 +57,7 @@ function safeText(raw) {
   for (const secret of secrets) text = text.replaceAll(secret, "[redacted]")
   return text
     .replace(/\b(?:Basic|Bearer)\s+[A-Za-z0-9._~+/=-]+/gi, "[redacted authorization]")
+    .replace(/\bdata:[^\s<>"']+/gi, "data:[embedded asset]")
     .replace(/(?:https?|wss?|oc):\/\/[^\s<>"']+/gi, safeURL)
     .slice(0, 4000)
 }
