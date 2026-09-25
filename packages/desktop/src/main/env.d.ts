@@ -1,5 +1,6 @@
 interface ImportMetaEnv {
   readonly OPENCODE_CHANNEL: string
+  readonly OPENCODE_PORTABLE: string
 }
 
 interface ImportMeta {
