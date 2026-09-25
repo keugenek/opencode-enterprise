@@ -1,3 +1,25 @@
+## Windows portable downloads
+
+This branch supplies Windows x64 portable packages based on **OpenCode v1.18.32**.
+
+**[Download the desktop and TUI portable ZIPs](https://github.com/keugenek/opencode-enterprise/actions/runs/36131190667/artifacts/10862515909)**
+
+1. Sign in to GitHub and download the `windows-portable-zips` artifact.
+2. Extract it, then extract the package you want:
+   - Desktop: `opencode-desktop-1.18.32-windows-x64-portable.zip` — run `OpenCode.exe`.
+   - TUI: `opencode-tui-1.18.32-windows-x64-portable.zip` — run `Start-TUI.cmd`.
+3. Keep each application's sibling `data/` folder with it to preserve its portable profile.
+
+The artifact also includes `SHA256SUMS`, `smoke-report.json`, and a desktop screenshot. All eight startup, UI, persistence, and relocation smoke checks passed in the [Windows build](https://github.com/keugenek/opencode-enterprise/actions/runs/36131190667). No model-response tests were performed.
+
+This artifact expires **October 9, 2026**. For subsequent builds, open the [Windows portable workflow](https://github.com/keugenek/opencode-enterprise/actions/workflows/windows-portable.yml), select a successful run for `enterprise-restart`, and download its `windows-portable-zips` artifact.
+
+The desktop is an unsigned custom portable build; the TUI uses the unmodified upstream executable. See [portable build and usage instructions](portable/windows/README.md) for details and [the restart plan](ENTERPRISE-RESTART.md) for branch context.
+
+This fork is independent of, and not affiliated with, the OpenCode team.
+
+---
+
 <p align="center">
   <a href="https://opencode.ai">
     <picture>
