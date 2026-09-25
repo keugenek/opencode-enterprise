@@ -2,14 +2,15 @@ import assert from "node:assert/strict"
 import { spawn, spawnSync } from "node:child_process"
 import { once } from "node:events"
 import { createServer } from "node:net"
-import { mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, existsSync, cpSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, readdirSync, renameSync, existsSync, cpSync } from "node:fs"
 import { resolve, join, relative, isAbsolute } from "node:path"
+import { tmpdir } from "node:os"
 import { setTimeout as delay } from "node:timers/promises"
 import { chromium } from "playwright"
 
 const output = resolve("portable-dist")
-const root = join(output, "smoke workspace")
-mkdirSync(root)
+// A packaged app must not inherit this repository's development tools/references.
+const root = mkdtempSync(join(tmpdir(), "opencode portable "))
 const logs = join(output, "smoke-logs")
 mkdirSync(logs)
 const results = []
