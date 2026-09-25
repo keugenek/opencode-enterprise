@@ -9,8 +9,8 @@ New-Item -ItemType Directory -Path $output | Out-Null
 $desktopSource = Join-Path $repo "packages/desktop/dist/win-unpacked"
 if (-not (Test-Path (Join-Path $desktopSource "OpenCode.exe"))) { throw "Build the portable desktop first" }
 if (Test-Path (Join-Path $desktopSource "data")) { throw "Refusing to package a used desktop profile" }
-$desktop = Join-Path $output "opencode-desktop-1.18.32-windows-x64-portable"
-$tui = Join-Path $output "opencode-tui-1.18.32-windows-x64-portable"
+$desktop = Join-Path $output "desktop"
+$tui = Join-Path $output "tui"
 Copy-Item -LiteralPath $desktopSource -Destination $desktop -Recurse
 New-Item -ItemType Directory -Path "$tui/app" -Force | Out-Null
 $download = Join-Path $output "upstream-tui.zip"
@@ -29,7 +29,23 @@ foreach ($dir in @($desktop, $tui)) {
     tuiUpstreamSha256 = $expected
     desktop = "Built from pinned source with portable data-path support; unsigned custom build"
   } | ConvertTo-Json | Set-Content -LiteralPath "$dir/BUILD.json" -Encoding utf8
-  Compress-Archive -LiteralPath $dir -DestinationPath "$dir.zip" -CompressionLevel Optimal
+  $name = Split-Path -Leaf $dir
+  $zip = Join-Path $output "opencode-$name-portable.zip"
+  Compress-Archive -LiteralPath $dir -DestinationPath $zip -CompressionLevel Optimal
+  # Validate actual archive entries against a 100-character destination prefix.
+  # Keep the full path below 240 characters for legacy Windows extractors.
+  $archive = [IO.Compression.ZipFile]::OpenRead($zip)
+  try {
+    $longest = $archive.Entries | Sort-Object { $_.FullName.Length } -Descending | Select-Object -First 1
+    if (-not $longest) { throw "Empty portable archive: $zip" }
+    $length = $longest.FullName.Length
+    Write-Host "$name longest ZIP entry ($length characters): $($longest.FullName)"
+    if (100 + $length -ge 240) {
+      throw "Portable ZIP exceeds the Windows extraction path budget: $($longest.FullName)"
+    }
+  } finally {
+    $archive.Dispose()
+  }
 }
 Get-ChildItem -LiteralPath $output -Filter "*-portable.zip" | ForEach-Object {
   "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)"

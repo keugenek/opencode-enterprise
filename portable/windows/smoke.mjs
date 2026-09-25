@@ -35,7 +35,7 @@ async function move(from, to) {
     }
   }
 }
-function unpack(name) {
+function unpack(name, folder) {
   const archive = join(output, name + ".zip")
   const result = spawnSync("pwsh", ["-NoProfile", "-Command",
     "Expand-Archive -LiteralPath $env:PORTABLE_TEST_ZIP -DestinationPath $env:PORTABLE_TEST_DEST"], {
@@ -43,7 +43,7 @@ function unpack(name) {
     encoding: "utf8", windowsHide: true, timeout: 120000,
   })
   assert.equal(result.status, 0, result.stderr)
-  return join(root, name)
+  return join(root, folder)
 }
 function tui(dir, args) {
   const command = '""' + join(dir, "Start-TUI.cmd") + '" ' + args + '"'
@@ -123,7 +123,7 @@ async function start(dir, attempt) {
 }
 
 try {
-  let cli = unpack("opencode-tui-1.18.32-windows-x64-portable")
+  let cli = unpack("opencode-tui-portable", "tui")
   assert.equal(tui(cli, "--version"), "1.18.32")
   check("TUI version")
   assert.equal(tui(cli, "db path"), join(cli, "data", "share", "opencode", "opencode.db"))
@@ -138,7 +138,7 @@ try {
   assert.equal(tui(cli, "db path"), join(cli, "data", "share", "opencode", "opencode.db"))
   check("TUI database persistence and relocation")
   writeFileSync(join(root, "installed-sentinel.db"), "do not touch")
-  let desktop = unpack("opencode-desktop-1.18.32-windows-x64-portable")
+  let desktop = unpack("opencode-desktop-portable", "desktop")
   const project = join(root, "project")
   mkdirSync(project)
   const directory = "?directory=" + encodeURIComponent(project)

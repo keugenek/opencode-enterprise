@@ -14,7 +14,11 @@ The artifact also includes `SHA256SUMS`, `smoke-report.json`, and a desktop scre
 
 This artifact expires **October 9, 2026**. For subsequent builds, open the [Windows portable workflow](https://github.com/keugenek/opencode-enterprise/actions/workflows/windows-portable.yml), select a successful run for `enterprise-restart`, and download its `windows-portable-zips` artifact.
 
-The desktop is an unsigned custom portable build; the TUI uses the unmodified upstream executable. See [portable build and usage instructions](portable/windows/README.md) for details and [the restart plan](ENTERPRISE-RESTART.md) for branch context.
+For **Path too long** during extraction, choose a short destination such as `C:\oc` and extract every file before launching.
+
+The desktop is an unsigned custom portable build, so SmartScreen may show **Unknown publisher**. If you downloaded the linked Actions artifact and trust this test build, choose **More info → Run anyway**. Managed PCs may require administrator approval. Signing would establish a publisher identity, but new signed builds can still receive reputation warnings ([Microsoft guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)).
+
+The TUI uses the unmodified upstream executable. See [portable build and usage instructions](portable/windows/README.md) for details and [the restart plan](ENTERPRISE-RESTART.md) for branch context.
 
 This fork is independent of, and not affiliated with, the OpenCode team.
 

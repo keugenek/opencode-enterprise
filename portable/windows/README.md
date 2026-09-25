@@ -7,6 +7,14 @@ This branch retains OpenCode v1.18.32 as the base. No enterprise patch series is
 - Close the app before moving its folder. Copy the entire folder, including `data/`, to retain history. The desktop and TUI ZIPs use separate profiles.
 - Update manually by replacing application files while preserving `data/`, after backing it up. Do not point this version at a newer installation's database.
 
+## Windows extraction and first launch
+
+Download and extract the `windows-portable-zips` artifact, then extract the desired inner ZIP into a short, writable path such as `C:\oc`. The packages use short names: `opencode-desktop-portable.zip` contains `desktop/`, and `opencode-tui-portable.zip` contains `tui/`. Version and source identity remain in `BUILD.json`.
+
+If Windows reports **Path too long**, choose a fresh short destination instead of nesting the default archive names. Extract every file before launching; do not skip files that failed to extract. The packaging job checks the longest path in each ZIP with a 100-character extraction destination prefix and requires the full path to stay below 240 characters. Longer destination paths can still exceed Windows limits.
+
+The desktop is unsigned, so SmartScreen may display **Windows protected your PC / Unknown publisher**. If you downloaded this repository's linked Actions artifact and trust this test build, choose **More info → Run anyway**. If your managed PC does not offer that option, contact its administrator. A trusted code-signing identity is needed to display a verified publisher; even signed new builds can receive reputation warnings. See [Microsoft's SmartScreen guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).
+
 ## Build and download
 
 The **Windows portable ZIPs** GitHub Actions workflow runs for pushes to `enterprise-restart`, using a GitHub-hosted Windows runner. Successful runs attach two ZIPs, `SHA256SUMS`, a smoke report and a desktop screenshot in the `windows-portable-zips` artifact. No release is automatically published.
