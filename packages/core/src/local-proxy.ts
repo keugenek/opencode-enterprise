@@ -39,6 +39,8 @@ export async function fetchLocal(input: string | URL | Request, init?: RequestIn
   })
   const status = response.statusCode
   if (status >= 300 && status < 400) {
+    // Destroying an unread Undici body emits an expected asynchronous AbortError.
+    response.body.on("error", () => {})
     response.body.destroy()
     throw new Error("Local model proxy redirects are disabled")
   }

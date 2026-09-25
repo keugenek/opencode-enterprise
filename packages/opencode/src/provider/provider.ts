@@ -1917,7 +1917,7 @@ const layer = Layer.effect(
     const getLanguage = Effect.fn("Provider.getLanguage")(function* (model: Model) {
       const s = yield* InstanceState.get(state)
       if (LocalProxy.enabled) {
-        const canonical = s.providers[LocalProxy.id]?.models[model.id]
+        const canonical = s.providers[ProviderV2.ID.make(LocalProxy.id)]?.models[model.id]
         if (model.providerID !== LocalProxy.id || !canonical) {
           return yield* new ModelNotFoundError({ providerID: model.providerID, modelID: model.id, suggestions: [] })
         }
@@ -1969,7 +1969,7 @@ const layer = Layer.effect(
 
       if (LocalProxy.enabled) {
         const s = yield* InstanceState.get(state)
-        const local = s.providers[LocalProxy.id]
+        const local = s.providers[ProviderV2.ID.make(LocalProxy.id)]
         const preferred = cfg.small_model ? parseModel(cfg.small_model) : undefined
         return (preferred?.providerID === LocalProxy.id ? local?.models[preferred.modelID] : undefined)
           ?? Object.values(local?.models ?? {})[0]
@@ -2045,7 +2045,7 @@ const layer = Layer.effect(
       const cfg = yield* config.get()
       if (LocalProxy.enabled) {
         const s = yield* InstanceState.get(state)
-        const local = s.providers[LocalProxy.id]
+        const local = s.providers[ProviderV2.ID.make(LocalProxy.id)]
         const preferred = cfg.model ? parseModel(cfg.model) : undefined
         const model = (preferred?.providerID === LocalProxy.id ? local?.models[preferred.modelID] : undefined)
           ?? Object.values(local?.models ?? {})[0]
