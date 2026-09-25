@@ -19,7 +19,7 @@ const metainfoFpm = (appId: string) =>
   `${path.join(packageDir, "resources", `${appId}.metainfo.xml`)}=/usr/share/metainfo/${appId}.metainfo.xml`
 
 async function signWindows(configuration: { path: string }) {
-  if (process.platform !== "win32") return
+  if (process.platform !== "win32" || process.env.OPENCODE_PORTABLE === "1") return
   if (process.env.GITHUB_ACTIONS !== "true") return
 
   await execFileAsync(
@@ -94,7 +94,7 @@ const getBase = (appId: string): Configuration => ({
     signtoolOptions: {
       sign: signWindows,
     },
-    target: ["nsis"],
+    target: process.env.OPENCODE_PORTABLE === "1" ? ["dir"] : ["nsis"],
     verifyUpdateCodeSignature: false,
   },
   nsis: {

@@ -1,3 +1,34 @@
+## Windows portable downloads
+
+This branch supplies custom Windows x64 desktop and TUI packages based on **OpenCode v1.18.32**, restricted to an OpenAI-compatible model proxy at **http://localhost:8081/v1**.
+
+**[Download the desktop and TUI portable ZIPs](https://github.com/keugenek/opencode-enterprise/actions/runs/36160642011/artifacts/10875616745)**
+
+1. Start your local proxy. Its `GET /v1/models` response must list the approved model IDs; inference uses `POST /v1/chat/completions`.
+2. Sign in to GitHub and download the `windows-portable-zips` artifact.
+3. Extract it, then extract the package you want into a short writable destination such as `C:\oc`:
+   - Desktop: `opencode-desktop-portable.zip` — run `desktop/OpenCode.exe`.
+   - TUI: `opencode-tui-portable.zip` — run `tui/Start-TUI.cmd`.
+4. Keep each application's sibling `data/` folder with it to preserve its portable profile.
+
+If the proxy needs a token, set `OPENCODE_LOCAL_PROXY_API_KEY` before launching. Restart the app after changing the proxy's model list. If the proxy is unavailable, the apps show no models and do not fall back to cloud providers.
+
+Provider connections, custom providers, and remote server controls are hidden. The compiled backend ignores provider/endpoint overrides, cloud credentials, and server plugins. Only models advertised by the local proxy are accepted.
+
+**The proxy must enforce authorization:** return only approved models and reject every other model ID on completion requests. Keep upstream credentials and policy under administrator control; use centrally enforced model permissions when users can replace the local proxy. Client restrictions cannot prevent replacing the executable or network access from separate tools. A gateway such as [LiteLLM supports model-scoped virtual keys](https://docs.litellm.ai/docs/proxy/virtual_keys).
+
+The artifact includes `SHA256SUMS`, `smoke-report.json`, and a desktop screenshot. The [Windows build](https://github.com/keugenek/opencode-enterprise/actions/runs/36160642011) passed archive path checks, 8 regression tests, three package typechecks, and 21 checks of the packaged apps, including synthetic proxy routing, blocked provider overrides, startup, persistence, and relocation. No real model inference was performed.
+
+This artifact expires **October 9, 2026**. For later builds, open the [Windows portable workflow](https://github.com/keugenek/opencode-enterprise/actions/workflows/windows-portable.yml), select a successful run for `enterprise-restart`, and download its `windows-portable-zips` artifact.
+
+Both executables are custom **unsigned test builds**. Windows may show **Unknown publisher** or block launch under an organization policy. Store publication and trusted signing are pending; these ZIPs do not resolve that restriction. See [Microsoft's SmartScreen guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).
+
+See [portable build and usage instructions](portable/windows/README.md) and [the restart plan](ENTERPRISE-RESTART.md). The upstream installation instructions below install the regular OpenCode distribution, without this branch's portable profile or model policy.
+
+This fork is independent of, and not affiliated with, the OpenCode team.
+
+---
+
 <p align="center">
   <a href="https://opencode.ai">
     <picture>

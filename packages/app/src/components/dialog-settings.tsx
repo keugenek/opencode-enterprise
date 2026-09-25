@@ -1,4 +1,5 @@
-import { Component, createSignal, startTransition } from "solid-js"
+import { localProxyOnly } from "@/utils/model-policy"
+import { Show, Component, createSignal, startTransition } from "solid-js"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -15,7 +16,7 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
   const language = useLanguage()
   const platform = usePlatform()
   const dialog = useDialog()
-  const [tab, setTab] = createSignal(props.defaultValue ?? "general")
+  const [tab, setTab] = createSignal(localProxyOnly && ["providers", "servers"].includes(props.defaultValue ?? "") ? "general" : props.defaultValue ?? "general")
 
   const showProviders = () => {
     void dialog.show(() => <DialogSettings defaultValue="providers" />)
@@ -45,20 +46,24 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
                       <Icon name="keyboard" />
                       {language.t("settings.tab.shortcuts")}
                     </Tabs.Trigger>
-                    <Tabs.Trigger value="servers">
-                      <Icon name="server" />
-                      {language.t("status.popover.tab.servers")}
-                    </Tabs.Trigger>
+                    <Show when={!localProxyOnly}>
+                      <Tabs.Trigger value="servers">
+                        <Icon name="server" />
+                        {language.t("status.popover.tab.servers")}
+                      </Tabs.Trigger>
+                    </Show>
                   </div>
                 </div>
 
                 <div class="flex flex-col gap-1.5">
                   <Tabs.SectionTitle>{language.t("settings.section.server")}</Tabs.SectionTitle>
                   <div class="flex flex-col gap-1.5 w-full">
-                    <Tabs.Trigger value="providers">
-                      <Icon name="providers" />
-                      {language.t("settings.providers.title")}
-                    </Tabs.Trigger>
+                    <Show when={!localProxyOnly}>
+                      <Tabs.Trigger value="providers">
+                        <Icon name="providers" />
+                        {language.t("settings.providers.title")}
+                      </Tabs.Trigger>
+                    </Show>
                     <Tabs.Trigger value="models">
                       <Icon name="models" />
                       {language.t("settings.models.title")}
@@ -79,12 +84,16 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
         <Tabs.Content value="shortcuts" class="no-scrollbar">
           <SettingsKeybinds />
         </Tabs.Content>
-        <Tabs.Content value="servers" class="no-scrollbar">
-          <SettingsServers />
-        </Tabs.Content>
-        <Tabs.Content value="providers" class="no-scrollbar">
-          <SettingsProviders onBack={showProviders} />
-        </Tabs.Content>
+        <Show when={!localProxyOnly}>
+          <Tabs.Content value="servers" class="no-scrollbar">
+            <SettingsServers />
+          </Tabs.Content>
+        </Show>
+        <Show when={!localProxyOnly}>
+          <Tabs.Content value="providers" class="no-scrollbar">
+            <SettingsProviders onBack={showProviders} />
+          </Tabs.Content>
+        </Show>
         <Tabs.Content value="models" class="no-scrollbar">
           <SettingsModels />
         </Tabs.Content>

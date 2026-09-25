@@ -1,3 +1,4 @@
+import { LocalProxy } from "./local-proxy"
 import path from "path"
 import { Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
@@ -145,6 +146,7 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Mo
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
+    if (LocalProxy.enabled) return Service.of({ get: () => Effect.succeed({}), refresh: () => Effect.void })
     const fs = yield* FSUtil.Service
     const events = yield* EventV2.Service
     const http = HttpClient.filterStatusOk(

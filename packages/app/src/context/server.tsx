@@ -275,7 +275,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     const url = (x: StoredServer) => (typeof x === "string" ? x : "type" in x ? x.http.url : x.url)
 
+    const locked = import.meta.env.VITE_OPENCODE_LOCAL_PROXY_ONLY === "1"
     const allServers = createMemo((): Array<ServerConnection.Any> => {
+      if (locked) return (props.servers ?? []).filter((server) => server.type === "sidecar" && server.variant === "base")
       return resolveServerList({ stored: store.list, props: props.servers })
     })
 
@@ -284,10 +286,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     })
 
     function setActive(input: ServerConnection.Key) {
+      if (locked && input !== props.defaultServer) return
       if (state.active !== input) setState("active", input)
     }
 
     function add(input: ServerConnection.Http) {
+      if (locked) return
       const url_ = normalizeServerUrl(input.http.url)
       if (!url_) return
       const conn: ServerConnection.Http = { ...input, authToken: undefined, http: { ...input.http, url: url_ } }
@@ -304,6 +308,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }
 
     function remove(key: ServerConnection.Key) {
+      if (locked) return
       const next = nextServerAfterRemoval(allServers(), key, props.defaultServer)
       const list = store.list.filter((x) => url(x) !== key)
       batch(() => {

@@ -1,3 +1,4 @@
+import { LocalProxy } from "@opencode-ai/core/local-proxy"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
@@ -100,6 +101,7 @@ async function substituteWellKnownRemoteConfig(input: {
 }
 
 async function resolveLoadedPlugins<T extends { plugin?: ConfigPluginV1.Spec[] }>(config: T, filepath: string) {
+  if (LocalProxy.enabled) return { ...config, plugin: [] }
   if (!config.plugin) return config
   for (let i = 0; i < config.plugin.length; i++) {
     // Normalize path-like plugin specs while we still know which config file declared them.
@@ -449,26 +451,28 @@ const layer = Layer.effect(
 
           yield* ensureGitignore(dir).pipe(Effect.orDie)
 
-          const dep = yield* npmSvc
-            .install(dir, {
-              add: [
-                {
-                  name: "@opencode-ai/plugin",
-                  version: InstallationLocal ? undefined : InstallationVersion,
-                },
-              ],
-            })
-            .pipe(
-              Effect.exit,
-              Effect.tap((exit) =>
-                Exit.isFailure(exit)
-                  ? Effect.logWarning("background dependency install failed", { dir, error: String(exit.cause) })
-                  : Effect.void,
-              ),
-              Effect.asVoid,
-              Effect.forkDetach,
-            )
-          deps.push(dep)
+          if (!LocalProxy.enabled) {
+            const dep = yield* npmSvc
+              .install(dir, {
+                add: [
+                  {
+                    name: "@opencode-ai/plugin",
+                    version: InstallationLocal ? undefined : InstallationVersion,
+                  },
+                ],
+              })
+              .pipe(
+                Effect.exit,
+                Effect.tap((exit) =>
+                  Exit.isFailure(exit)
+                    ? Effect.logWarning("background dependency install failed", { dir, error: String(exit.cause) })
+                    : Effect.void,
+                ),
+                Effect.asVoid,
+                Effect.forkDetach,
+              )
+            deps.push(dep)
+          }
 
           result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
           result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.load(dir)))
@@ -595,6 +599,16 @@ const layer = Layer.effect(
         }
         if (Flag.OPENCODE_DISABLE_PRUNE) {
           result.compaction = { ...result.compaction, prune: false }
+        }
+
+        if (LocalProxy.enabled) {
+          result.enabled_providers = [LocalProxy.id]
+          result.disabled_providers = []
+          result.provider = {}
+          result.plugin = []
+          result.plugin_origins = []
+          if (!result.model?.startsWith(LocalProxy.id + "/")) delete result.model
+          if (!result.small_model?.startsWith(LocalProxy.id + "/")) delete result.small_model
         }
 
         return {

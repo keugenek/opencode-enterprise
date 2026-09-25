@@ -1,3 +1,4 @@
+import { localProxyOnly } from "../util/model-policy"
 import { createMemo, createSignal, onMount, Show } from "solid-js"
 import { useSync } from "../context/sync"
 import { map, pipe, sortBy } from "remeda"
@@ -114,6 +115,7 @@ export function createDialogProviderOptions() {
   }
 
   const options = createMemo(() => {
+    if (localProxyOnly) return []
     return pipe(
       providerOptions(sync.data.provider_next.all),
       map((provider) => {
@@ -226,6 +228,7 @@ export function createDialogProviderOptions() {
 }
 
 export function DialogProvider() {
+  if (localProxyOnly) return null
   const options = createDialogProviderOptions()
   return <DialogSelect title="Connect a provider" options={options()} />
 }

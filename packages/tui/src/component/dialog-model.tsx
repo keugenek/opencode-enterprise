@@ -1,3 +1,4 @@
+import { localProxyOnly } from "../util/model-policy"
 import { createMemo, createSignal } from "solid-js"
 import { useLocal } from "../context/local"
 import { map, pipe, flatMap, entries, filter, sortBy, take } from "remeda"
@@ -160,6 +161,8 @@ export function DialogModel(props: { providerID?: string }) {
       actions={[
         {
           command: "model.dialog.provider",
+          hidden: localProxyOnly,
+          disabled: localProxyOnly,
           title: connected() ? "Connect provider" : "View all providers",
           onTrigger() {
             dialog.replace(() => <DialogProvider />)

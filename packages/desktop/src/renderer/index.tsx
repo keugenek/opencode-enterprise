@@ -32,6 +32,7 @@ import "./styles.css"
 import { Splash } from "@opencode-ai/ui/logo"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 
+const localProxyOnly = import.meta.env.VITE_OPENCODE_LOCAL_PROXY_ONLY === "1"
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
   throw new Error(t("desktop.error.dev.rootNotFound"))
@@ -163,7 +164,7 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
     }
   })()
 
-  const wslServersApi = os === "windows" ? window.api.wslServers : undefined
+  const wslServersApi = !localProxyOnly && os === "windows" ? window.api.wslServers : undefined
 
   return {
     platform: "desktop",
@@ -273,12 +274,14 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
     },
 
     getDefaultServer: async () => {
+      if (localProxyOnly) return null
       const url = await window.api.getDefaultServerUrl().catch(() => null)
       if (!url) return null
       return ServerConnection.Key.make(url)
     },
 
     setDefaultServer: async (url: string | null) => {
+      if (localProxyOnly) return
       await window.api.setDefaultServerUrl(url)
     },
 
@@ -394,7 +397,7 @@ function DesktopRoot(props: { windowState: DesktopWindowState }) {
           },
         })
       }
-      list.push(...readyWslConnections(wslServers.data, language.t("wsl.server.label")))
+      if (!localProxyOnly) list.push(...readyWslConnections(wslServers.data, language.t("wsl.server.label")))
       return list
     })
     const effectiveDefaultServer = createMemo(() =>

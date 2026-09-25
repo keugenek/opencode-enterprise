@@ -1,3 +1,4 @@
+import { localProxyOnly } from "@/utils/model-policy"
 import {
   createEffect,
   createMemo,
@@ -1080,10 +1081,11 @@ export default function LegacyLayout(props: ParentProps) {
       })
     }
 
-    return commands
+    return localProxyOnly ? commands.filter((command) => !["provider.connect", "server.switch"].includes(command.id)) : commands
   })
 
   function connectProvider() {
+    if (localProxyOnly) return
     const run = ++dialogRun
     void import("@/components/dialog-connect-provider").then((x) => {
       if (dialogDead || dialogRun !== run) return
@@ -1092,6 +1094,7 @@ export default function LegacyLayout(props: ParentProps) {
   }
 
   function openServer() {
+    if (localProxyOnly) return
     const run = ++dialogRun
     void import("@/components/dialog-select-server").then((x) => {
       if (dialogDead || dialogRun !== run) return
@@ -2187,7 +2190,7 @@ export default function LegacyLayout(props: ParentProps) {
         <div
           class="shrink-0 px-3 py-3"
           classList={{
-            hidden: store.gettingStartedDismissed || !(providers.all().size > 0 && providers.paid().length === 0),
+            hidden: localProxyOnly || store.gettingStartedDismissed || !(providers.all().size > 0 && providers.paid().length === 0),
           }}
         >
           <div class="rounded-xl bg-background-base shadow-xs-border-base" data-component="getting-started">

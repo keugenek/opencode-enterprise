@@ -1,3 +1,4 @@
+import { localProxyOnly } from "../../util/model-policy"
 import {
   BoxRenderable,
   RGBA,
@@ -216,7 +217,7 @@ export function Prompt(props: PromptProps) {
   function promptModelWarning() {
     toast.show({
       variant: "warning",
-      message: "Connect a provider to send prompts",
+      message: localProxyOnly ? "Start the proxy at localhost:8081, then restart OpenCode to load its models" : "Connect a provider to send prompts",
       duration: 3000,
     })
     if (sync.data.provider.length === 0) {

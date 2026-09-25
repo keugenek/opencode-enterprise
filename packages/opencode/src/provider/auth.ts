@@ -1,3 +1,4 @@
+import { LocalProxy } from "@opencode-ai/core/local-proxy"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import type { AuthOAuthResult, Hooks } from "@opencode-ai/plugin"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
@@ -129,6 +130,7 @@ const layer: Layer.Layer<Service, never, Auth.Service | Plugin.Service> = Layer.
 
     const decode = Schema.decodeUnknownSync(Methods)
     const methods = Effect.fn("ProviderAuth.methods")(function* () {
+      if (LocalProxy.enabled) return {}
       const hooks = (yield* InstanceState.get(state)).hooks
       return decode(
         Record.map(hooks, (item) =>
@@ -163,6 +165,7 @@ const layer: Layer.Layer<Service, never, Auth.Service | Plugin.Service> = Layer.
     const authorize = Effect.fn("ProviderAuth.authorize")(function* (
       input: { providerID: ProviderV2.ID } & AuthorizeInput,
     ) {
+      if (LocalProxy.enabled) return yield* new OauthMissing({ providerID: input.providerID })
       const { hooks, pending } = yield* InstanceState.get(state)
       const method = hooks[input.providerID].methods[input.method]
       if (method.type !== "oauth") return

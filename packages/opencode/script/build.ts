@@ -193,6 +193,7 @@ for (const item of targets) {
       FFF_LIBC: JSON.stringify(item.abi === "musl" ? "musl" : "gnu"),
       OPENCODE_VERSION: `'${Script.version}'`,
       OPENCODE_MODELS_DEV: generated.modelsData,
+      OPENCODE_LOCAL_PROXY_ONLY: JSON.stringify(process.env.OPENCODE_LOCAL_PROXY_ONLY === "1"),
       OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + treeSitterWorkerPath,
       OPENCODE_WORKER_PATH: workerPath,
       OPENCODE_CHANNEL: `'${Script.channel}'`,

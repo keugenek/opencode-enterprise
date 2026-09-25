@@ -1,3 +1,4 @@
+import { LocalProxy } from "@opencode-ai/core/local-proxy"
 import yargs from "yargs"
 import { hideBin } from "yargs/helpers"
 import { RunCommand } from "./cli/cmd/run"
@@ -64,6 +65,12 @@ const cli = yargs(args)
     type: "boolean",
   })
   .middleware(async (opts) => {
+    if (LocalProxy.enabled && (opts._[0] === "attach" || opts.attach)) {
+      throw new Error("Remote server attachment is disabled in the localhost:8081 build")
+    }
+    if (LocalProxy.enabled && (opts._[0] === "upgrade" || (["auth", "providers"].includes(String(opts._[0])) && opts._[1] === "login"))) {
+      throw new Error("Provider login and upstream upgrades are disabled in the localhost:8081 build")
+    }
     if (opts.printLogs) process.env.OPENCODE_PRINT_LOGS = "1"
     if (opts.logLevel) process.env.OPENCODE_LOG_LEVEL = opts.logLevel
     if (opts.pure) {

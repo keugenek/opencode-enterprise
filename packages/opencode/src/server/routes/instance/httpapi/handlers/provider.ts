@@ -1,3 +1,4 @@
+import { LocalProxy } from "@opencode-ai/core/local-proxy"
 import { ProviderAuth } from "@/provider/auth"
 import { Config } from "@/config/config"
 import { ModelsDev } from "@opencode-ai/core/models-dev"
@@ -40,6 +41,14 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     const authStore = yield* Auth.Service
 
     const list = Effect.fn("ProviderHttpApi.list")(function* () {
+      if (LocalProxy.enabled) {
+        const connected = yield* provider.list()
+        return {
+          all: Object.values(connected).map(Provider.toPublicInfo),
+          default: Provider.defaultModelIDs(connected),
+          connected: Object.keys(connected),
+        }
+      }
       const config = yield* cfg.get()
       const all = yield* ModelsDev.Service.use((s) => s.get())
       const disabled = new Set(config.disabled_providers ?? [])

@@ -1,4 +1,5 @@
-import { Component, createMemo, createSignal, startTransition } from "solid-js"
+import { localProxyOnly } from "@/utils/model-policy"
+import { Show, Component, createMemo, createSignal, startTransition } from "solid-js"
 import { Dialog } from "@opencode-ai/ui/v2/dialog-v2"
 import { TabsV2 } from "@opencode-ai/ui/v2/tabs-v2"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -25,7 +26,7 @@ export const DialogSettings: Component<{
   const layout = useLayout()
   const tabs = useTabs()
   const serverSync = useServerSync()
-  const [tab, setTab] = createSignal(props.defaultValue ?? "general")
+  const [tab, setTab] = createSignal(localProxyOnly && ["providers", "servers"].includes(props.defaultValue ?? "") ? "general" : props.defaultValue ?? "general")
   const directory = createMemo(() => {
     const route = layout.route()
     if (route.type === "dir-new-sesssion") return route.dir
@@ -71,14 +72,18 @@ export const DialogSettings: Component<{
                 <div class="flex flex-col gap-1.5">
                   <TabsV2.SectionTitle>{language.t("settings.section.server")}</TabsV2.SectionTitle>
                   <div class="flex flex-col gap-1.5 w-full">
-                    <TabsV2.Trigger value="servers">
-                      <Icon name="server" />
-                      {language.t("status.popover.tab.servers")}
-                    </TabsV2.Trigger>
-                    <TabsV2.Trigger value="providers">
-                      <Icon name="providers" />
-                      {language.t("settings.providers.title")}
-                    </TabsV2.Trigger>
+                    <Show when={!localProxyOnly}>
+                      <TabsV2.Trigger value="servers">
+                        <Icon name="server" />
+                        {language.t("status.popover.tab.servers")}
+                      </TabsV2.Trigger>
+                    </Show>
+                    <Show when={!localProxyOnly}>
+                      <TabsV2.Trigger value="providers">
+                        <Icon name="providers" />
+                        {language.t("settings.providers.title")}
+                      </TabsV2.Trigger>
+                    </Show>
                     <TabsV2.Trigger value="models">
                       <Icon name="models" />
                       {language.t("settings.models.title")}
@@ -99,12 +104,16 @@ export const DialogSettings: Component<{
         <TabsV2.Content value="shortcuts" class="settings-v2-panel">
           <SettingsKeybinds v2 />
         </TabsV2.Content>
-        <TabsV2.Content value="servers" class="settings-v2-panel">
-          <SettingsServersV2 />
-        </TabsV2.Content>
-        <TabsV2.Content value="providers" class="settings-v2-panel">
-          <SettingsProvidersV2 directory={directory} onBack={showProviders} />
-        </TabsV2.Content>
+        <Show when={!localProxyOnly}>
+          <TabsV2.Content value="servers" class="settings-v2-panel">
+            <SettingsServersV2 />
+          </TabsV2.Content>
+        </Show>
+        <Show when={!localProxyOnly}>
+          <TabsV2.Content value="providers" class="settings-v2-panel">
+            <SettingsProvidersV2 directory={directory} onBack={showProviders} />
+          </TabsV2.Content>
+        </Show>
         <TabsV2.Content value="models" class="settings-v2-panel">
           <SettingsModelsV2 />
         </TabsV2.Content>

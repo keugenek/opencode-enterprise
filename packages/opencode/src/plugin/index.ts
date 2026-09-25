@@ -1,3 +1,4 @@
+import { LocalProxy } from "@opencode-ai/core/local-proxy"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import type {
   Hooks,
@@ -133,6 +134,7 @@ const layer = Layer.effect(
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("Plugin.state")(function* (ctx) {
+        if (LocalProxy.enabled) return { hooks: [] }
         const hooks: Hooks[] = []
         const bridge = yield* EffectBridge.make()
 
