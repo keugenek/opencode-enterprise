@@ -2,21 +2,21 @@
 
 This branch supplies Windows x64 portable packages based on **OpenCode v1.18.32**.
 
-**[Download the desktop and TUI portable ZIPs](https://github.com/keugenek/opencode-enterprise/actions/runs/36131190667/artifacts/10862515909)**
+**[Download the desktop and TUI portable ZIPs](https://github.com/keugenek/opencode-enterprise/actions/runs/36139572372/artifacts/10866153995)**
 
 1. Sign in to GitHub and download the `windows-portable-zips` artifact.
 2. Extract it, then extract the package you want:
-   - Desktop: `opencode-desktop-1.18.32-windows-x64-portable.zip` — run `OpenCode.exe`.
-   - TUI: `opencode-tui-1.18.32-windows-x64-portable.zip` — run `Start-TUI.cmd`.
+   - Desktop: `opencode-desktop-portable.zip` — run `desktop/OpenCode.exe`.
+   - TUI: `opencode-tui-portable.zip` — run `tui/Start-TUI.cmd`.
 3. Keep each application's sibling `data/` folder with it to preserve its portable profile.
 
-The artifact also includes `SHA256SUMS`, `smoke-report.json`, and a desktop screenshot. All eight startup, UI, persistence, and relocation smoke checks passed in the [Windows build](https://github.com/keugenek/opencode-enterprise/actions/runs/36131190667). No model-response tests were performed.
+The artifact also includes `SHA256SUMS`, `smoke-report.json`, and a desktop screenshot. Archive path checks and all eight startup, UI, persistence, and relocation smoke checks passed in the [Windows build](https://github.com/keugenek/opencode-enterprise/actions/runs/36139572372). No model-response tests were performed.
 
 This artifact expires **October 9, 2026**. For subsequent builds, open the [Windows portable workflow](https://github.com/keugenek/opencode-enterprise/actions/workflows/windows-portable.yml), select a successful run for `enterprise-restart`, and download its `windows-portable-zips` artifact.
 
 For **Path too long** during extraction, choose a short destination such as `C:\oc` and extract every file before launching.
 
-The desktop is an unsigned custom portable build, so SmartScreen may show **Unknown publisher**. If you downloaded the linked Actions artifact and trust this test build, choose **More info → Run anyway**. Managed PCs may require administrator approval. Signing would establish a publisher identity, but new signed builds can still receive reputation warnings ([Microsoft guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)).
+The desktop is an unsigned custom portable build, so SmartScreen may show **Unknown publisher**. If you downloaded the linked Actions artifact and trust this test build, choose **More info → Run anyway**. If **Run anyway** is unavailable, Smart App Control or an organization policy may require a trusted signed build; this artifact remains unsigned. Signing would establish a publisher identity, but new signed builds can still receive reputation warnings ([Microsoft guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)).
 
 The TUI uses the unmodified upstream executable. See [portable build and usage instructions](portable/windows/README.md) for details and [the restart plan](ENTERPRISE-RESTART.md) for branch context.
 
