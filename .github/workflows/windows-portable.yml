@@ -5,6 +5,9 @@ on:
     paths:
       - "portable/**"
       - "packages/desktop/**"
+      - "packages/opencode/**"
+      - "packages/core/**"
+      - "packages/app/**"
       - ".github/workflows/windows-portable.yml"
   workflow_dispatch:
 permissions:
@@ -20,6 +23,7 @@ jobs:
       OPENCODE_CHANNEL: prod
       OPENCODE_VERSION: 1.18.32
       OPENCODE_PORTABLE: "1"
+      OPENCODE_LOCAL_PROXY_ONLY: "1"
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
       - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744
@@ -29,11 +33,20 @@ jobs:
       - name: Portable profile regressions
         working-directory: packages/desktop
         run: bun test src/main/portable.test.ts
+      - name: Local proxy transport regressions
+        working-directory: packages/core
+        run: bun test test/local-proxy.test.ts
+      - name: Build restricted TUI
+        working-directory: packages/opencode
+        run: bun run script/build.ts --single --baseline --skip-install --skip-embed-web-ui
       - name: Build desktop
         working-directory: packages/desktop
         run: bun run build
       - name: Typecheck desktop
         working-directory: packages/desktop
+        run: bun typecheck
+      - name: Typecheck model policy
+        working-directory: packages/opencode
         run: bun typecheck
       - name: Package desktop directory
         working-directory: packages/desktop

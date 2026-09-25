@@ -1,3 +1,4 @@
+import { PORTABLE } from "./constants"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { app, utilityProcess } from "electron"
@@ -28,6 +29,7 @@ type SpawnLocalServerOptions = {
 }
 
 export function getDefaultServerUrl(): string | null {
+  if (PORTABLE) return null
   const value = getStore().get(DEFAULT_SERVER_URL_KEY)
   return typeof value === "string" ? value : null
 }

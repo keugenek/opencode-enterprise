@@ -92,6 +92,9 @@ const require = __cjs_mod__.createRequire(import.meta.url);
     },
   },
   renderer: {
+    define: {
+      "import.meta.env.VITE_OPENCODE_LOCAL_PROXY_ONLY": JSON.stringify(process.env.OPENCODE_LOCAL_PROXY_ONLY ?? "0"),
+    },
     plugins: [appPlugin, sentry],
     publicDir: "../../../app/public",
     root: "src/renderer",

@@ -13,11 +13,11 @@ $desktop = Join-Path $output "desktop"
 $tui = Join-Path $output "tui"
 Copy-Item -LiteralPath $desktopSource -Destination $desktop -Recurse
 New-Item -ItemType Directory -Path "$tui/app" -Force | Out-Null
-$download = Join-Path $output "upstream-tui.zip"
-Invoke-WebRequest -Uri "https://github.com/anomalyco/opencode/releases/download/v1.18.32/opencode-windows-x64.zip" -OutFile $download
-$expected = "1483c72d5adced825590a0ecf8cc18b3e87e535960a125dbf539d33bce135d0f"
-if ((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw "Upstream TUI checksum mismatch" }
-Expand-Archive -LiteralPath $download -DestinationPath "$tui/app"
+$tuiSource = Join-Path $repo "packages/opencode/dist/opencode-windows-x64-baseline/bin/opencode.exe"
+if ($env:OPENCODE_LOCAL_PROXY_ONLY -ne "1" -or -not (Test-Path -LiteralPath $tuiSource)) {
+  throw "Build the restricted Windows baseline TUI first with OPENCODE_LOCAL_PROXY_ONLY=1"
+}
+Copy-Item -LiteralPath $tuiSource -Destination "$tui/app/opencode.exe"
 Copy-Item "$PSScriptRoot/Start-TUI.cmd" "$tui/Start-TUI.cmd"
 foreach ($dir in @($desktop, $tui)) {
   Copy-Item "$PSScriptRoot/README.md" "$dir/README.md"
@@ -26,8 +26,10 @@ foreach ($dir in @($desktop, $tui)) {
     version = "1.18.32"
     upstreamCommit = "545f51d26cc39a907d2867492d498d9607ea5fa4"
     sourceCommit = (& git -C $repo rev-parse HEAD)
-    tuiUpstreamSha256 = $expected
-    desktop = "Built from pinned source with portable data-path support; unsigned custom build"
+    modelEndpoint = "http://localhost:8081/v1"
+    modelPolicy = "Compiled local proxy only; cloud providers and remote backend attachment disabled"
+    desktop = "Custom portable build; unsigned"
+    tui = "Custom baseline CPU build with the same model restriction; unsigned"
   } | ConvertTo-Json | Set-Content -LiteralPath "$dir/BUILD.json" -Encoding utf8
   $name = Split-Path -Leaf $dir
   $zip = Join-Path $output "opencode-$name-portable.zip"

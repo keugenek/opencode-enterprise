@@ -1,3 +1,4 @@
+import { LocalProxy } from "@opencode-ai/core/local-proxy"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import os from "os"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
@@ -1135,7 +1136,7 @@ export function toPublicInfo(provider: Info): Info {
 }
 
 export function defaultModelIDs<T extends { models: Record<string, { id: string }> }>(providers: Record<string, T>) {
-  return mapValues(providers, (item) => sort(Object.values(item.models))[0].id)
+  return mapValues(pickBy(providers, (item) => Object.keys(item.models).length > 0), (item) => sort(Object.values(item.models))[0].id)
 }
 
 export class ModelNotFoundError extends Schema.TaggedErrorClass<ModelNotFoundError>()("ProviderModelNotFoundError", {
@@ -1401,6 +1402,24 @@ const layer = Layer.effect(
       Effect.gen(function* () {
         const bridge = yield* EffectBridge.make()
         const cfg = yield* config.get()
+        if (LocalProxy.enabled) {
+          const saved = yield* auth.get(ProviderV2.ID.make(LocalProxy.id)).pipe(Effect.orDie)
+          const apiKey = process.env.OPENCODE_LOCAL_PROXY_API_KEY ?? (saved?.type === "api" ? saved.key : undefined)
+          const ids = yield* Effect.tryPromise(() => LocalProxy.discover(apiKey)).pipe(
+            Effect.catch(() => Effect.succeed([] as string[])),
+          )
+          const local = fromModelsDevProvider(LocalProxy.catalog(ids))
+          local.options = { baseURL: LocalProxy.baseURL, apiKey }
+          const providers = { [local.id]: local }
+          return {
+            models: new Map<string, LanguageModelV3>(),
+            providers,
+            catalog: providers,
+            sdk: new Map<string, BundledSDK>(),
+            modelLoaders: {},
+            varsLoaders: {},
+          }
+        }
         const modelsDev = yield* modelsDevSvc.get()
         const catalog = mapValues(modelsDev, fromModelsDevProvider)
         const database = mapValues(catalog, toPublicInfo)
@@ -1734,7 +1753,9 @@ const layer = Layer.effect(
     async function resolveSDK(model: Model, s: State, envs: Record<string, string | undefined>) {
       try {
         const provider = s.providers[model.providerID]
-        const options = { ...provider.options }
+        const options = LocalProxy.enabled
+          ? { baseURL: LocalProxy.baseURL, apiKey: provider.options.apiKey, fetch: LocalProxy.fetchLocal } as Info["options"]
+          : { ...provider.options }
 
         if (
           model.providerID === "google-vertex" &&
@@ -1895,6 +1916,13 @@ const layer = Layer.effect(
 
     const getLanguage = Effect.fn("Provider.getLanguage")(function* (model: Model) {
       const s = yield* InstanceState.get(state)
+      if (LocalProxy.enabled) {
+        const canonical = s.providers[LocalProxy.id]?.models[model.id]
+        if (model.providerID !== LocalProxy.id || !canonical) {
+          return yield* new ModelNotFoundError({ providerID: model.providerID, modelID: model.id, suggestions: [] })
+        }
+        model = canonical
+      }
       const envs = yield* env.all()
       const key = `${model.providerID}/${model.id}`
       if (s.models.has(key)) return s.models.get(key)!
@@ -1938,6 +1966,14 @@ const layer = Layer.effect(
 
     const getSmallModel = Effect.fn("Provider.getSmallModel")(function* (providerID: ProviderV2.ID) {
       const cfg = yield* config.get()
+
+      if (LocalProxy.enabled) {
+        const s = yield* InstanceState.get(state)
+        const local = s.providers[LocalProxy.id]
+        const preferred = cfg.small_model ? parseModel(cfg.small_model) : undefined
+        return (preferred?.providerID === LocalProxy.id ? local?.models[preferred.modelID] : undefined)
+          ?? Object.values(local?.models ?? {})[0]
+      }
 
       if (cfg.small_model) {
         const parsed = parseModel(cfg.small_model)
@@ -2007,6 +2043,15 @@ const layer = Layer.effect(
 
     const defaultModel = Effect.fn("Provider.defaultModel")(function* () {
       const cfg = yield* config.get()
+      if (LocalProxy.enabled) {
+        const s = yield* InstanceState.get(state)
+        const local = s.providers[LocalProxy.id]
+        const preferred = cfg.model ? parseModel(cfg.model) : undefined
+        const model = (preferred?.providerID === LocalProxy.id ? local?.models[preferred.modelID] : undefined)
+          ?? Object.values(local?.models ?? {})[0]
+        if (!model) return yield* new NoModelsError({ providerID: ProviderV2.ID.make(LocalProxy.id) })
+        return { providerID: model.providerID, modelID: model.id }
+      }
       if (cfg.model) return parseModel(cfg.model)
 
       const s = yield* InstanceState.get(state)

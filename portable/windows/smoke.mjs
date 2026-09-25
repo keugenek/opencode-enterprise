@@ -14,6 +14,31 @@ const logs = join(output, "smoke-logs")
 mkdirSync(logs)
 const results = []
 let active
+let proxy
+const proxyLog = join(logs, "proxy-calls.json")
+const hostile = {
+  model: "openai/cloud-test",
+  small_model: "openai/cloud-test",
+  enabled_providers: ["openai"],
+  disabled_providers: ["local-proxy"],
+  provider: {
+    openai: { options: { baseURL: "http://localhost:8082/v1", apiKey: "synthetic" }, models: { "cloud-test": {} } },
+    "local-proxy": { options: { baseURL: "http://localhost:8082/v1" }, models: { "injected-model": {} } },
+  },
+}
+async function tuiCommand(dir, args) {
+  const child = spawn("cmd.exe", ["/d", "/s", "/c", '""' + join(dir, "Start-TUI.cmd") + '" ' + args + '"'], {
+    windowsVerbatimArguments: true, windowsHide: true, cwd: dir,
+    env: { ...process.env, OPENAI_API_KEY: "synthetic", OPENCODE_LOCAL_PROXY_ONLY: "0" },
+    signal: AbortSignal.timeout(60000),
+  })
+  let stdout = ""
+  let stderr = ""
+  child.stdout.on("data", (chunk) => stdout += chunk)
+  child.stderr.on("data", (chunk) => stderr += chunk)
+  const [code] = await once(child, "exit")
+  return { code, stdout: stdout.trim(), stderr }
+}
 
 function check(name, details = {}) {
   results.push({ name, status: "passed", ...details })
@@ -68,6 +93,7 @@ async function start(dir, attempt) {
       ...process.env, OPENCODE_DB: join(root, "installed-sentinel.db"),
       XDG_DATA_HOME: join(root, "wrong-profile"),
       OPENCODE_TEST_ONBOARDING: "1", OPENCODE_SIDECAR_V2: "1",
+      OPENAI_API_KEY: "synthetic", OPENCODE_LOCAL_PROXY_ONLY: "0",
     },
     stdio: ["ignore", "pipe", "pipe"],
   })
@@ -137,15 +163,56 @@ try {
   assert.match(tui(cli, 'db "SELECT value FROM portable_probe"'), /42/)
   assert.equal(tui(cli, "db path"), join(cli, "data", "share", "opencode", "opencode.db"))
   check("TUI database persistence and relocation")
+  writeFileSync(join(cli, "opencode.json"), JSON.stringify(hostile))
+  const offline = await tuiCommand(cli, "models")
+  assert.equal(offline.code, 0, offline.stderr)
+  assert.equal(offline.stdout, "", "Offline proxy must not expose cloud models")
+  check("TUI has no cloud fallback when proxy is offline")
+  proxy = spawn(process.execPath, ["portable/windows/proxy-fixture.mjs"], {
+    env: { ...process.env, PORTABLE_PROXY_LOG: proxyLog },
+    stdio: ["ignore", "pipe", "pipe", "ipc"], windowsHide: true,
+  })
+  proxy.stderr.on("data", (chunk) => process.stderr.write(chunk))
+  await Promise.race([once(proxy, "message"), once(proxy, "exit").then(() => { throw Error("Proxy fixture exited") }), delay(10000).then(() => { throw Error("Proxy fixture startup timed out") })])
+  const models = await tuiCommand(cli, "models")
+  assert.equal(models.code, 0, models.stderr)
+  assert.deepEqual(models.stdout.split(/\r?\n/).sort(), ["local-proxy/proxy-small", "local-proxy/proxy-test"])
+  check("TUI only lists proxy models despite cloud keys and hostile configuration")
+  const attach = await tuiCommand(cli, "attach http://localhost:8082")
+  assert.notEqual(attach.code, 0)
+  assert.match(attach.stderr, /disabled/)
+  check("TUI cannot attach to an unrestricted backend")
   writeFileSync(join(root, "installed-sentinel.db"), "do not touch")
   let desktop = unpack("opencode-desktop-portable", "desktop")
   const project = join(root, "project")
   mkdirSync(project)
+  writeFileSync(join(project, "opencode.json"), JSON.stringify(hostile))
   const directory = "?directory=" + encodeURIComponent(project)
   const first = await start(desktop, "first")
   await first.page.evaluate(() => window.api.storeSet("portable.smoke", "marker", "preserved"))
   const session = await first.request("/session" + directory, { method: "POST", body: JSON.stringify({ title: "Portable smoke" }) })
   assert(session.id)
+  const providers = await first.request("/provider" + directory)
+  assert.deepEqual(providers.all.map((p) => p.id), ["local-proxy"])
+  assert.deepEqual(Object.keys(providers.all[0].models).sort(), ["proxy-small", "proxy-test"])
+  assert.deepEqual(await first.request("/provider/auth" + directory), {})
+  const config = await first.request("/config" + directory)
+  assert.deepEqual(config.enabled_providers, ["local-proxy"])
+  check("Desktop exposes only the local proxy and no cloud OAuth")
+  const reply = await first.request("/session/" + session.id + "/message" + directory, {
+    method: "POST",
+    body: JSON.stringify({ model: { providerID: "local-proxy", modelID: "proxy-test" }, parts: [{ type: "text", text: "Synthetic routing check" }] }),
+  })
+  assert(reply.parts.some((p) => p.type === "text" && p.text.includes("LOCAL_PROXY_SMOKE_OK")), JSON.stringify(reply))
+  const calls = JSON.parse(readFileSync(proxyLog, "utf8"))
+  assert(calls.some((call) => call.path === "/v1/chat/completions" && call.model === "proxy-test"))
+  check("Desktop routes a synthetic response through localhost:8081")
+  const rejected = await tuiCommand(cli, 'run -m openai/cloud-test "Synthetic blocked-provider check"')
+  assert.match(rejected.stderr + rejected.stdout, /Model not found|ProviderModelNotFoundError|not found/i)
+  check("Cloud model execution is rejected")
+  await first.page.evaluate(() => window.api.setDefaultServerUrl("http://localhost:8082"))
+  assert.equal(await first.page.evaluate(() => window.api.getDefaultServerUrl()), null)
+  check("Desktop ignores unrestricted default backend settings")
   await first.close()
   check("Desktop renderer and authenticated backend")
   assert(existsSync(join(desktop, "data", "share", "opencode", "opencode.db")))
@@ -170,11 +237,23 @@ try {
   assert(!mainLogs.includes("Checking for update"))
   assert(mainLogs.includes("1.18.32"))
   check("Pinned desktop version and no installer update check")
+  const proxyExited = once(proxy, "exit")
+  proxy.kill()
+  await proxyExited
+  proxy = undefined
+  const offlineDesktop = await start(desktop, "offline")
+  const offlineProviders = await offlineDesktop.request("/provider" + directory)
+  assert.deepEqual(offlineProviders.all.map((p) => p.id), ["local-proxy"])
+  assert.deepEqual(offlineProviders.all[0].models, {})
+  assert.deepEqual(offlineProviders.default, {})
+  await offlineDesktop.close()
+  check("Desktop starts offline with no cloud fallback")
 } catch (error) {
   results.push({ name: "failure", status: "failed", message: error.stack })
   process.exitCode = 1
 } finally {
   if (active && active.exitCode === null) active.kill()
+  if (proxy && proxy.exitCode === null) proxy.kill()
   // Only synthetic test data is copied into diagnostic artifacts.
   for (const dir of readdirSync(root)) {
     const source = join(root, dir, "data", "desktop", "logs")
