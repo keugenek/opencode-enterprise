@@ -1,4 +1,6 @@
-import { Agent, request, type Dispatcher } from "undici"
+// Use the package entrypoint explicitly: Bun 1.3.14 substitutes a fetch-backed
+// compatibility shim for bare "undici" imports and ignores its dispatcher.
+import { Agent, request, type Dispatcher } from "undici/index.js"
 import { Readable } from "node:stream"
 import type { ModelsDev } from "./models-dev"
 
