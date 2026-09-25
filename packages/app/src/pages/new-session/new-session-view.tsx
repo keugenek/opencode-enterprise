@@ -1,3 +1,4 @@
+import { localProxyOnly } from "@/utils/model-policy"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
@@ -104,6 +105,7 @@ function ProviderTip() {
   )
   const visible = createMemo(
     () =>
+      !localProxyOnly &&
       serverSync().child(sdk().directory)[0].provider_ready &&
       persistedReady() &&
       providers.paid().length === 0 &&

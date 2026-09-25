@@ -8,6 +8,7 @@ on:
       - "packages/opencode/**"
       - "packages/core/**"
       - "packages/app/**"
+      - "packages/tui/**"
       - ".github/workflows/windows-portable.yml"
   workflow_dispatch:
 permissions:
@@ -47,6 +48,9 @@ jobs:
         run: bun typecheck
       - name: Typecheck model policy
         working-directory: packages/opencode
+        run: bun typecheck
+      - name: Typecheck terminal UI
+        working-directory: packages/tui
         run: bun typecheck
       - name: Package desktop directory
         working-directory: packages/desktop

@@ -1,3 +1,4 @@
+import { localProxyOnly } from "@/utils/model-policy"
 import type { IntegrationMethod, IntegrationOauthConnectOutput } from "@opencode-ai/client/promise"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -57,6 +58,7 @@ export const DialogConnectProvider: Component<{
   directory?: Accessor<string | undefined>
   controller?: ReturnType<typeof useProviderConnectController>
 }> = (props) => {
+  if (localProxyOnly) return null
   const fallback = useProviderConnectController()
   const controller = props.controller ?? fallback
   const language = useLanguage()

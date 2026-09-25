@@ -1,3 +1,5 @@
+import { localProxyOnly } from "@/utils/model-policy"
+import { DialogSelectModel } from "./dialog-select-model"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
@@ -15,6 +17,7 @@ import { decode64 } from "@/utils/base64"
 type ModelState = ReturnType<typeof useLocal>["model"]
 
 export const DialogSelectModelUnpaid: Component<{ model?: ModelState }> = (props) => {
+  if (localProxyOnly) return <DialogSelectModel model={props.model} />
   const local = useLocal()
   const model = props.model ?? local.model
   const dialog = useDialog()

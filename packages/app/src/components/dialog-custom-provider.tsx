@@ -1,3 +1,4 @@
+import { localProxyOnly } from "@/utils/model-policy"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
@@ -19,6 +20,7 @@ type Props = {
 }
 
 export function DialogCustomProvider(props: Props) {
+  if (localProxyOnly) return null
   const language = useLanguage()
 
   return (
@@ -41,6 +43,7 @@ export function DialogCustomProvider(props: Props) {
 }
 
 export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
+  if (localProxyOnly) return null
   const dialog = useDialog()
   const serverSync = useServerSync()
   const serverSDK = useServerSDK()

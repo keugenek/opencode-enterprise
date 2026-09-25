@@ -1,3 +1,4 @@
+import { localProxyOnly } from "./util/model-policy"
 import { render, TimeToFirstDraw, useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { registerOpencodeSpinner } from "./component/register-spinner"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
@@ -955,7 +956,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
           dialog.clear()
         },
       },
-    ].map((command) => ({
+    ].filter((command) => !localProxyOnly || command.name !== "provider.connect").map((command) => ({
       namespace: "palette",
       ...command,
     })),
@@ -1031,6 +1032,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
   })
 
   event.on("installation.update-available", async (evt) => {
+    if (localProxyOnly) return
     console.log("installation.update-available", evt)
     const version = evt.properties.version
 

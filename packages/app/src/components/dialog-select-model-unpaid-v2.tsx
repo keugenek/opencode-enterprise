@@ -1,3 +1,5 @@
+import { localProxyOnly } from "@/utils/model-policy"
+import { DialogSelectModel } from "./dialog-select-model"
 import { DialogBody, DialogHeader, DialogTitle, DialogV2 } from "@opencode-ai/ui/v2/dialog-v2"
 import { Icon } from "@opencode-ai/ui/v2/icon"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
@@ -17,6 +19,7 @@ const featuredProviders = ["opencode", "opencode-go", "openai", "anthropic", "go
 const displayModelName = (name: string) => name.replace(/\s+(?:\(free\)|free)$/i, "")
 
 export const DialogSelectModelUnpaidV2: Component<{ model?: ModelState }> = (props) => {
+  if (localProxyOnly) return <DialogSelectModel model={props.model} />
   const local = useLocal()
   const model = props.model ?? local.model
   const dialog = useDialog()

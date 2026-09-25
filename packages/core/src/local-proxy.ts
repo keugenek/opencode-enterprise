@@ -1,4 +1,4 @@
-import { request } from "node:http"
+import { Agent, request, type Dispatcher } from "undici"
 import { Readable } from "node:stream"
 import type { ModelsDev } from "./models-dev"
 
@@ -17,36 +17,40 @@ export function assertURL(input: string | URL) {
   return url
 }
 
-// Use direct HTTP so HTTP_PROXY/HTTPS_PROXY and custom SDK fetch functions cannot
-// reroute model traffic. Redirects are rejected rather than followed.
+// An explicit Undici dispatcher bypasses environment proxy settings under both
+// Node and Bun (Bun's node:http wrapper uses its environment-aware fetch).
+const direct = new Agent()
+
 export async function fetchLocal(input: string | URL | Request, init?: RequestInit): Promise<Response> {
   const message = new Request(input, init)
   const url = assertURL(message.url)
   const body = message.body ? Buffer.from(await message.arrayBuffer()) : undefined
-  return new Promise((resolve, reject) => {
-    const headers = Object.fromEntries(message.headers.entries())
-    headers["accept-encoding"] = "identity"
-    const client = request(url, { method: message.method, headers, signal: message.signal }, (response) => {
-      const status = response.statusCode ?? 500
-      if (status >= 300 && status < 400) {
-        response.resume()
-        reject(new Error("Local model proxy redirects are disabled"))
-        return
-      }
-      const headers = new Headers()
-      for (let i = 0; i < response.rawHeaders.length; i += 2) {
-        headers.append(response.rawHeaders[i], response.rawHeaders[i + 1])
-      }
-      resolve(new Response(
-        message.method === "HEAD" || status === 204 || status === 304
-          ? null
-          : Readable.toWeb(response) as ReadableStream<Uint8Array>,
-        { status, headers },
-      ))
-    })
-    client.on("error", reject)
-    client.end(body)
+  const headers = Object.fromEntries(message.headers.entries())
+  headers["accept-encoding"] = "identity"
+  const response = await request(url, {
+    dispatcher: direct,
+    method: message.method as Dispatcher.HttpMethod,
+    headers,
+    body,
+    signal: message.signal,
+    maxRedirections: 0,
   })
+  const status = response.statusCode
+  if (status >= 300 && status < 400) {
+    response.body.destroy()
+    throw new Error("Local model proxy redirects are disabled")
+  }
+  const responseHeaders = new Headers()
+  for (const [name, value] of Object.entries(response.headers)) {
+    if (Array.isArray(value)) value.forEach((item) => responseHeaders.append(name, item))
+    else if (value !== undefined) responseHeaders.set(name, value)
+  }
+  return new Response(
+    message.method === "HEAD" || status === 204
+      ? null
+      : Readable.toWeb(response.body) as ReadableStream<Uint8Array>,
+    { status, headers: responseHeaders },
+  )
 }
 
 export function modelIDs(input: unknown) {
