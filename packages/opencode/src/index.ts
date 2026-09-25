@@ -68,7 +68,7 @@ const cli = yargs(args)
     if (LocalProxy.enabled && (opts._[0] === "attach" || opts.attach)) {
       throw new Error("Remote server attachment is disabled in the localhost:8081 build")
     }
-    if (LocalProxy.enabled && (opts._[0] === "upgrade" || (opts._[0] === "auth" && opts._[1] === "login"))) {
+    if (LocalProxy.enabled && (opts._[0] === "upgrade" || (["auth", "providers"].includes(String(opts._[0])) && opts._[1] === "login"))) {
       throw new Error("Provider login and upstream upgrades are disabled in the localhost:8081 build")
     }
     if (opts.printLogs) process.env.OPENCODE_PRINT_LOGS = "1"

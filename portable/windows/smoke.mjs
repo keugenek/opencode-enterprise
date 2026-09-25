@@ -29,6 +29,7 @@ const hostile = {
 async function tuiCommand(dir, args) {
   const child = spawn("cmd.exe", ["/d", "/s", "/c", '""' + join(dir, "Start-TUI.cmd") + '" ' + args + '"'], {
     windowsVerbatimArguments: true, windowsHide: true, cwd: dir,
+    stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, OPENAI_API_KEY: "synthetic", OPENCODE_LOCAL_PROXY_ONLY: "0" },
     signal: AbortSignal.timeout(60000),
   })
@@ -134,7 +135,7 @@ async function start(dir, attempt) {
   }
   await request("/global/health")
   await page.locator("body").waitFor({ state: "visible" })
-  assert((await page.locator("body").innerText()).trim().length > 10, "Renderer body is empty")
+  await page.waitForFunction(() => document.body.innerText.trim().length > 10, undefined, { timeout: 60000 })
   await page.screenshot({ path: join(output, "desktop.png") })
   return {
     page, request,
@@ -183,6 +184,16 @@ try {
   assert.notEqual(attach.code, 0)
   assert.match(attach.stderr, /disabled/)
   check("TUI cannot attach to an unrestricted backend")
+  for (const command of ["auth", "providers"]) {
+    const login = await tuiCommand(cli, command + " login")
+    assert.notEqual(login.code, 0)
+    assert.match(login.stderr, /disabled/)
+  }
+  check("TUI provider login aliases are disabled")
+  const tuiReply = await tuiCommand(cli, 'run -m local-proxy/proxy-test "Synthetic routing check"')
+  assert.equal(tuiReply.code, 0, tuiReply.stderr)
+  assert.match(tuiReply.stdout + tuiReply.stderr, /LOCAL_PROXY_SMOKE_OK/)
+  check("TUI routes a synthetic response through localhost:8081")
   writeFileSync(join(root, "installed-sentinel.db"), "do not touch")
   let desktop = unpack("opencode-desktop-portable", "desktop")
   const project = join(root, "project")
