@@ -1754,7 +1754,7 @@ const layer = Layer.effect(
       try {
         const provider = s.providers[model.providerID]
         const options = LocalProxy.enabled
-          ? { baseURL: LocalProxy.baseURL, apiKey: provider.options.apiKey, fetch: LocalProxy.fetchLocal } as Info["options"]
+          ? { baseURL: LocalProxy.baseURL, apiKey: provider.options.apiKey, fetch: LocalProxy.forModel(model.api.id) } as Info["options"]
           : { ...provider.options }
 
         if (

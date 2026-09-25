@@ -23,10 +23,21 @@ export function assertURL(input: string | URL) {
 // Node and Bun (Bun's node:http wrapper uses its environment-aware fetch).
 const direct = new Agent()
 
-export async function fetchLocal(input: string | URL | Request, init?: RequestInit): Promise<Response> {
+export function forModel(modelID: string) {
+  return (input: string | URL | Request, init?: RequestInit) => fetchLocal(input, init, modelID)
+}
+
+export async function fetchLocal(input: string | URL | Request, init?: RequestInit, modelID?: string): Promise<Response> {
   const message = new Request(input, init)
   const url = assertURL(message.url)
   const body = message.body ? Buffer.from(await message.arrayBuffer()) : undefined
+  if (modelID !== undefined) {
+    const payload: unknown = body ? JSON.parse(body.toString("utf8")) : undefined
+    if (message.method !== "POST" || url.pathname !== "/v1/chat/completions" ||
+      !payload || typeof payload !== "object" || !("model" in payload) || payload.model !== modelID) {
+      throw new Error("Model request does not match the selected local proxy model")
+    }
+  }
   const headers = Object.fromEntries(message.headers.entries())
   headers["accept-encoding"] = "identity"
   const response = await request(url, {

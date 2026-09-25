@@ -71,3 +71,18 @@ test("rejects malformed discovery without inventing a cloud fallback", () => {
   expect(() => LocalProxy.modelIDs({ models: ["gpt-4"] })).toThrow()
   expect(LocalProxy.modelIDs({ data: [{ id: "" }, { nope: true }, { id: "valid" }] })).toEqual(["valid"])
 })
+
+test("request options cannot replace the selected model on the wire", async () => {
+  const fetch = LocalProxy.forModel("proxy-test")
+  const before = requests
+  for (const model of ["cloud-test", "injected-model"]) {
+    await expect(fetch(LocalProxy.baseURL + "/chat/completions", {
+      method: "POST", body: JSON.stringify({ model }),
+    })).rejects.toThrow("selected local proxy model")
+  }
+  expect(requests).toBe(before)
+  const response = await fetch(LocalProxy.baseURL + "/chat/completions", {
+    method: "POST", body: JSON.stringify({ model: "proxy-test" }),
+  })
+  expect(await response.json()).toEqual({ model: "proxy-test" })
+})
