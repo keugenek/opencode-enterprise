@@ -28,7 +28,8 @@ jobs:
           New-Item -ItemType Directory -Path "$probe/portable/windows" -Force | Out-Null
           Copy-Item -LiteralPath "portable/windows/smoke.mjs" -Destination "$probe/portable/windows/smoke.mjs"
           Copy-Item -LiteralPath "portable/windows/proxy-fixture.mjs" -Destination "$probe/portable/windows/proxy-fixture.mjs"
-          Move-Item -LiteralPath "probe/portable-dist" -Destination "$probe/portable-dist"
+          New-Item -ItemType Directory -Path "$probe/portable-dist" -Force | Out-Null
+          Copy-Item -Path "probe/portable-dist/*-portable.zip" -Destination "$probe/portable-dist"
           $script = Get-Content -Raw -LiteralPath "$probe/portable/windows/smoke.mjs"
           $script = $script.Replace('assert((await page.locator("body").innerText()).trim().length > 10, "Renderer body is empty")', 'await page.waitForFunction(() => document.body.innerText.trim().length > 10, undefined, { timeout: 60000 })')
           Set-Content -LiteralPath "$probe/portable/windows/smoke.mjs" -Value $script -Encoding utf8
