@@ -1809,6 +1809,8 @@ const layer = Layer.effect(
         const key = Hash.fast(
           JSON.stringify({
             providerID: model.providerID,
+            // Restricted transports bind the exact model ID into the fetch callback.
+            modelID: LocalProxy.enabled ? model.api.id : undefined,
             npm: model.api.npm,
             options,
           }),

@@ -228,6 +228,17 @@ try {
   const calls = JSON.parse(readFileSync(proxyLog, "utf8"))
   assert(calls.some((call) => call.path === "/v1/chat/completions" && call.model === "proxy-test"))
   check("Desktop routes a synthetic response through localhost:8081")
+  const alternate = await first.request("/session" + directory, {
+    method: "POST", body: JSON.stringify({ title: "Second approved model" }),
+  })
+  const alternateReply = await first.request("/session/" + alternate.id + "/message" + directory, {
+    method: "POST",
+    body: JSON.stringify({ model: { providerID: "local-proxy", modelID: "proxy-small" }, parts: [{ type: "text", text: "Synthetic second model check" }] }),
+  })
+  assert(alternateReply.parts.some((p) => p.type === "text" && p.text.includes("LOCAL_PROXY_SMOKE_OK")), JSON.stringify(alternateReply))
+  const alternateCalls = JSON.parse(readFileSync(proxyLog, "utf8"))
+  assert(alternateCalls.some((call) => call.path === "/v1/chat/completions" && call.model === "proxy-small"))
+  check("Desktop can switch between approved models in the same backend")
   const rejected = await tuiCommand(cli, 'run -m openai/cloud-test "Synthetic blocked-provider check"')
   assert.match(rejected.stderr + rejected.stdout, /Model not found|ProviderModelNotFoundError|not found/i)
   check("Cloud model execution is rejected")
