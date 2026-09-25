@@ -56,7 +56,7 @@ node ./portable/windows/smoke.mjs
 
 ## Validation and limits
 
-The workflow checks the actual ZIP payloads: TUI version and persistent database across launches/relocation; desktop window, authenticated local backend, settings and session persistence after closing/reopening and moving the directory. No model request is needed.
+The workflow checks the actual ZIP payloads: TUI version and persistent database across launches/relocation; desktop window, authenticated local backend, settings and session persistence after closing/reopening and moving the directory. Policy checks cover provider controls, configuration overrides, rejected cloud/unlisted models, and startup without a proxy. A local synthetic proxy verifies chat-completion routing; no real model inference is performed.
 
 This is portable application state, not a sandbox or an air-gapped distribution. Projects, Git, shells, external tools and explicitly configured file paths may be outside the portable directory. Saved absolute project paths may need reopening after moving to a different drive. OS credential encryption can bind some credentials to a machine/account; cross-machine authentication portability is not promised. The app requires a writable directory and the usual Windows runtime dependencies.
 

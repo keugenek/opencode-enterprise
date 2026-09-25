@@ -52,7 +52,8 @@ export async function fetchLocal(input: string | URL | Request, init?: RequestIn
   return new Response(
     message.method === "HEAD" || status === 204
       ? null
-      : Readable.toWeb(response.body) as ReadableStream<Uint8Array>,
+      : // Node and Bun declare different types for the same Web Stream contract.
+        Readable.toWeb(response.body) as unknown as ReadableStream<Uint8Array>,
     { status, headers: responseHeaders },
   )
 }
