@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal DisableDelayedExpansion
 set "XDG_CONFIG_HOME=%~dp0data\config"
 set "XDG_DATA_HOME=%~dp0data\share"
 set "XDG_CACHE_HOME=%~dp0data\cache"

@@ -18,12 +18,22 @@ let active
 function check(name, details = {}) {
   results.push({ name, status: "passed", ...details })
 }
-function move(from, to) {
+async function move(from, to) {
   for (const path of [from, to]) {
     const rel = relative(root, resolve(path))
     assert(!rel.startsWith("..") && !isAbsolute(rel), "Test move must stay within smoke workspace")
   }
-  renameSync(from, to)
+  // Windows scanners and exiting child processes can briefly retain file handles.
+  const deadline = Date.now() + 30000
+  while (true) {
+    try {
+      renameSync(from, to)
+      return
+    } catch (error) {
+      if (!["EPERM", "EBUSY", "EACCES"].includes(error.code) || Date.now() >= deadline) throw error
+      await delay(500)
+    }
+  }
 }
 function unpack(name) {
   const archive = join(output, name + ".zip")
@@ -120,8 +130,9 @@ try {
   tui(cli, 'db "CREATE TABLE portable_probe (value TEXT)"')
   tui(cli, 'db "INSERT INTO portable_probe VALUES (42)"')
   assert.match(tui(cli, 'db "SELECT value FROM portable_probe"'), /42/)
+  check("TUI database survives restart")
   const movedCli = join(root, "TUI moved")
-  move(cli, movedCli)
+  await move(cli, movedCli)
   cli = movedCli
   assert.match(tui(cli, 'db "SELECT value FROM portable_probe"'), /42/)
   assert.equal(tui(cli, "db path"), join(cli, "data", "share", "opencode", "opencode.db"))
@@ -144,7 +155,7 @@ try {
   await second.close()
   check("Desktop settings and session survive restart")
   const movedDesktop = join(root, "Desktop moved")
-  move(desktop, movedDesktop)
+  await move(desktop, movedDesktop)
   desktop = movedDesktop
   const third = await start(desktop, "relocated")
   assert.equal(await third.page.evaluate(() => window.api.storeGet("portable.smoke", "marker")), "preserved")

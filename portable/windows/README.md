@@ -16,7 +16,7 @@ The desktop is rebuilt from this branch using the upstream locked dependencies a
 Local build from the repository root, using Node 24 and Bun 1.3.14:
 
 ```powershell
-bun install --linker hoisted --frozen-lockfile
+bun install --linker hoisted --frozen-lockfile --backend copyfile --network-concurrency 1
 $env:OPENCODE_CHANNEL = "prod"
 $env:OPENCODE_VERSION = "1.18.32"
 $env:OPENCODE_PORTABLE = "1"
