@@ -76,6 +76,7 @@ jobs:
         with:
           name: windows-portable-diagnostics
           path: |
+            portable-dist/*-portable.zip
             portable-dist/smoke-report.json
             portable-dist/smoke-logs/**
             packages/desktop/dist/builder-debug.yml

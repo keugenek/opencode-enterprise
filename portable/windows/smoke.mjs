@@ -128,8 +128,9 @@ async function start(dir, attempt) {
       },
       signal: AbortSignal.timeout(15000),
     })
-    assert(response.ok, path + ": HTTP " + response.status)
-    return response.json()
+    const body = await response.text()
+    assert(response.ok, path + ": HTTP " + response.status + " " + body)
+    return JSON.parse(body)
   }
   await request("/global/health")
   await page.locator("body").waitFor({ state: "visible" })
@@ -269,6 +270,8 @@ try {
   for (const dir of readdirSync(root)) {
     const source = join(root, dir, "data", "desktop", "logs")
     if (existsSync(source)) cpSync(source, join(logs, dir), { recursive: true })
+    const backend = join(root, dir, "data", "share", "opencode", "log")
+    if (existsSync(backend)) cpSync(backend, join(logs, dir + "-backend"), { recursive: true })
   }
   writeFileSync(join(output, "smoke-report.json"), JSON.stringify({ results }, null, 2))
   console.log(JSON.stringify({ results }, null, 2))
